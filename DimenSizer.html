@@ -1,0 +1,3378 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Big - Small - Tall</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+P+One&family=Rubik+Beastly&family=Spicy+Rice&family=Trade+Winds&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Caveat&display=swap" rel="stylesheet">
+</head>
+<body>
+    <script>
+        const Phygo = (function(){
+    var globalOut = {
+        Physics : {},
+        Renderer : {},
+        Ui : {},
+        Util : {},
+        System : {}
+    };
+    class Screen {
+        constructor(width = 1000, height = 1000){
+            this.width = width;
+            this.height = height;
+            this.div = document.createElement("div");
+            this.div.style.position = "absolute";
+            this.div.style.top = "50%";
+            this.div.style.left = "50%";
+            this.Main = document.createElement("canvas");
+            this.Main.style.width = "100%";
+            this.Main.style.height = "100%";
+            this.Main.width = width;
+            this.Main.height = height;
+            this.Main.style.position = "absolute";
+            this.div.appendChild(this.Main);
+            document.body.appendChild(this.div);
+        }
+        _Resize(){
+            var widthToHeight = this.width / this.height;
+            var newWidth = window.innerWidth;
+            var newHeight = window.innerHeight;
+            var newWidthToHeight = newWidth / newHeight;
+            if(newWidthToHeight > widthToHeight) newWidth = newHeight * widthToHeight;
+            else newHeight = newWidth / widthToHeight;
+            this.div.style.width = newWidth + "px";
+            this.div.style.height = newHeight + "px";
+            this.div.style.marginTop = (-newHeight / 2) + "px";
+            this.div.style.marginLeft = (-newWidth / 2) + "px";
+        }
+    }
+
+    class Vector {
+        constructor(x, y){
+            this.x = x; 
+            this.y = y;
+        }
+        Add(vector){
+            return new Vector(this.x + vector.x, this.y + vector.y);
+        }
+        Sub(vector){
+            return new Vector(this.x - vector.x, this.y - vector.y);
+        }
+        Scale(k){
+            return new Vector(this.x * k, this.y * k);
+        }
+        Mult(vector){
+            return new Vector(this.x * vector.x, this.y * vector.y);
+        }
+        Angle(){
+            return Math.atan2(this.y, this.x);
+        }
+        Clone(){
+            return new Vector(this.x, this.y);
+        }
+        AddScaled(vector, k){
+            return new Vector(this.x + vector.x * k, this.y + vector.y * k);
+        }
+        Rotate(angle, center = new Vector(0, 0)){
+            let x = this.x - center.x;
+            let y = this.y - center.y;
+            let r = [];
+            r[0] = x * Math.cos(angle) - Math.sin(angle) * y;
+            r[1] = x * Math.sin(angle) + Math.cos(angle) * y;
+            r[0] += center.x;
+            r[1] += center.y;
+            return new Vector(r[0], r[1]);
+        }
+        Length(){
+            return Math.sqrt(this.x * this.x + this.y * this.y);
+        }
+        LengthSquared(){
+            return Math.pow(this.x, 2) + Math.pow(this.y, 2);
+        }
+        Unit(){
+            let length = this.Length();
+            if(length == 0) return this;
+            else return new Vector(this.x / length, this.y / length);
+        }
+        Perp(){
+            return new Vector(this.y, -this.x);
+        }
+
+        dot(v){
+            return this.x * v.x + this.y * v.y;
+        }
+
+        static AngleBetween(vector1, vector2){
+            return Math.acos(Vector.Dot(vector1, vector2) / (vector1.Length() * vector2.Length()));
+        }
+        static Dot(vector1, vector2){
+            return vector1.x * vector2.x + vector1.y * vector2.y;
+        }
+        static Cross(vector1, vector2){
+            return vector1.x * vector2.y - vector1.y * vector2.x;
+        }
+        static Average(array){
+            let sum = new Vector(0, 0);
+            for(let i = 0; i < array.length; i++){
+                sum.x += array[i].x;
+                sum.y += array[i].y;
+            }
+            sum = sum.Scale(1 / array.length);
+            return sum;
+        }
+    }
+
+
+    class AABB {
+        constructor(x, y, w, h, userData){
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.userData = userData;
+            this.added = false;
+        }
+    
+        vsAabb(aabb){
+            if(Math.floor(this.x) == Math.floor(aabb.x) && Math.floor(this.y) == Math.floor(aabb.y)) return false;
+            if(this.x + this.w/2 >= aabb.x - aabb.w/2 && 
+               this.x - this.w/2 <= aabb.x + aabb.w/2 && 
+               this.y + this.h/2 >= aabb.y - aabb.h/2 && 
+               this.y - this.h/2 <= aabb.y + aabb.h/2){
+                return true;
+            }else{
+                return false;
+            }
+        }
+        draw(c, col = "rgba(100, 150, 100, 0.8)"){
+            c.strokeStyle = col;
+            c.strokeRect(this.x - this.w/2, this.y - this.h/2, this.w, this.h);
+        }
+    }
+
+    class QuadTree{
+        constructor(aabb, limit){
+            this.aabb = aabb;
+            this.limit = limit;
+            this.divided = false;
+            this.data = [];
+        }
+    
+        divide(){
+            this.topLeft = new QuadTree(new AABB(this.aabb.x - this.aabb.w/4, this.aabb.y - this.aabb.h/4, this.aabb.w/2, this.aabb.h/2), this.limit);
+            this.topRight = new QuadTree(new AABB(this.aabb.x + this.aabb.w/4, this.aabb.y - this.aabb.h/4, this.aabb.w/2, this.aabb.h/2), this.limit);
+            this.bottomLeft = new QuadTree(new AABB(this.aabb.x - this.aabb.w/4, this.aabb.y + this.aabb.h/4, this.aabb.w/2, this.aabb.h/2), this.limit);
+            this.bottomRight = new QuadTree(new AABB(this.aabb.x + this.aabb.w/4, this.aabb.y + this.aabb.h/4, this.aabb.w/2, this.aabb.h/2), this.limit);
+            for(let i = 0; i < this.data.length; i++){
+                this.topLeft.insert(this.data[i]);
+                this.topRight.insert(this.data[i]);
+                this.bottomLeft.insert(this.data[i]);
+                this.bottomRight.insert(this.data[i]);
+            }
+            this.divided = true;
+        }
+    
+    
+        clear(){
+            this.data = [];
+            this.divided = false;
+            this.topRight = null;
+            this.topLeft = null;
+            this.bottomLeft = null;
+            this.bottomRight = null;
+        }
+    
+        query(aabb, res){
+            if(res == undefined){
+                res = new Set();
+            } 
+            if(!aabb.vsAabb(this.aabb)) return;
+            if(!this.divided){
+                for(let i = 0; i < this.data.length; i++){
+                    if(aabb.vsAabb(this.data[i])){
+                        res.add(this.data[i]);
+                    }
+                }
+            }else{
+                this.topLeft.query(aabb, res);
+                this.topRight.query(aabb, res);
+                this.bottomLeft.query(aabb, res);
+                this.bottomRight.query(aabb, res);
+            }
+            return res;
+        }
+    
+        insert(aabb, _depth = 0){
+            const maxRec = this.limit-1;
+            if(!this.aabb.vsAabb(aabb)){
+                return false;
+            }
+            if(this.data.length < this.limit || _depth > maxRec){
+                this.data.push(aabb);
+                return true;
+            }else{
+                if(!this.divided){
+                    this.divide();
+                }
+                this.topLeft.insert(aabb, _depth + 1);
+                this.topRight.insert(aabb, _depth + 1);
+                this.bottomLeft.insert(aabb, _depth + 1);
+                this.bottomRight.insert(aabb, _depth + 1);
+            }
+        }
+    
+        draw(c){
+            this.aabb.draw(c);
+            if(this.divided){
+                this.topLeft.draw(c);
+                this.topRight.draw(c);
+                this.bottomLeft.draw(c);
+                this.bottomRight.draw(c);
+            }
+        }
+    }
+
+    class Entity {
+        constructor(params){
+            this.width = 0;
+            this.height = 0;
+            this.inCollision = false;
+            this.sprite = params.sprite || undefined;
+            this.body = params.body || undefined;
+            this.center = params.center || this.body.center;
+            this.uniqueName = params.name;
+            this.props = {
+                left : false,
+                right : false
+            };
+            this.CollidingGroups = params.CollidingGroups || new Set();
+            this._cbs = {};
+            this.sides = {
+                top : new Set(),
+                bottom : new Set(),
+                left : new Set(),
+                right : new Set()
+            }
+        }
+        SetSprite(sprite){
+            this.sprite = sprite;
+        }
+
+        SetBody(body){
+            this.body = body;
+        }
+
+        AddCollision(group, cb){
+            this.CollidingGroups.add(group);
+            this._cbs[group] = cb;
+        }
+
+        Neighbours(qt){
+            return qt.query(new AABB(this.center.x, this.center.y, this.width, this.height));
+        }
+
+        static _GetData(group){
+            let split = group.split("-");
+            let type = split[0];
+            let name = "";
+            for(let i = 1; i < split.length; i++){
+                name += split[i];
+            }
+            return { type : type, name : name };
+        }
+
+        _Draw(c){
+            if(this.sprite){
+                this.sprite._Draw(c);
+            }
+            if(this.body){
+                if(!this.sprite){
+                    this.body.Draw(c);
+                }
+                //c.strokeStyle = "white";
+                // c.save();
+                // c.strokeRect(this.center.x - this.width / 2, this.center.y - this.height / 2, this.width, this.height);
+                // c.restore();
+            }
+        }
+
+        _Update(dt){
+            this.sides.left.clear();
+            this.sides.right.clear();
+            this.sides.top.clear();
+            this.sides.bottom.clear();
+            this.body._MomentIntegration(dt);
+            if(this.body){
+                this.center = this.body.center.Clone();
+                this.width = this.body.boundingRect.width;
+                this.height = this.body.boundingRect.height;
+            }
+            if(this.sprite){
+                this.sprite.center = this.body.center;
+                this.sprite.angle = this.body.angle;
+            }
+        }
+
+    }
+    var ORIGIN = new Entity({
+        center : new Vector(0, 0)
+    });
+
+    class Camera{
+        constructor(params){
+            this.pos = params.position || new Vector(0, 0);
+            this.zoom = params.zoom || 1;
+            this.c = params.c;
+            this.offSet = params.offSet || { x : this.c.canvas.width/2, y : this.c.canvas.height/2 };
+            this.worldWidth = params.worldWidth || 1000;
+            this.worldHeight = params.worldHeight || 1000;
+            this.target = params.target || ORIGIN;
+            this.lockCamera = params.lockCamera || false;
+        }
+    
+        Update(){
+            if(this.lockCamera){
+                if(this.pos.y > 0) this.pos.y = 0;
+                if(this.pos.x > 0) this.pos.x = 0;
+                if(-this.pos.y + ((this.offSet.y * 2) / this.zoom) > this.worldHeight) this.pos.y = -(this.worldHeight - ((this.offSet.y * 2) / this.zoom)); 
+                if(-this.pos.x + ((this.offSet.x * 2) / this.zoom) > this.worldWidth) this.pos.x = -(this.worldWidth - ((this.offSet.x * 2) / this.zoom)); 
+            }
+        }
+
+        SetTarget(target){
+            this.target = target;
+        }
+
+        LookAt(vector){
+            let ent = new Entity({
+                center : vector
+            });
+            this.target = ent;
+        }
+    
+        Follow(){
+            let finalX = -this.target.center.x + this.offSet.x / this.zoom;
+            let finalY = -this.target.center.y + this.offSet.y / this.zoom;
+            let tar = new Vector(finalX, finalY);
+            let v = tar.Sub(this.pos);
+            v.x *= 0.05;
+            v.y *= 0.05;
+            this.pos = this.pos.Add(v);
+        }
+    
+        Start(z = 1){
+            this.c.save();
+            this.c.scale(this.zoom, this.zoom);
+            this.c.translate(this.pos.x / z, this.pos.y / z);
+        }
+    
+        End(){
+            this.c.restore();
+        }
+    
+        Draw(cb, z){
+            this.Start(z);
+            cb();
+            this.End();
+        }
+
+        static CamDraw(cam, cb, z){
+            cam.Start(z);
+            cb();
+            cam.End();
+        }
+
+    }
+    function DetectPolyVsPoly(e1, e2){
+        let e1SupportPoints = [];
+        let e1FaceNormals = e1._GetFaceNormals();
+        let e2FaceNormals = e2._GetFaceNormals();
+        for(let i = 0; i < e1FaceNormals.length; i++){
+            let spInfo = e2._FindSupportPoint(e1FaceNormals[i].Scale(-1), e1.vertices[i]);
+            if(spInfo.sp == undefined) return [{ collide : false }];
+            e1SupportPoints[i] = spInfo;
+        }
+        let e2SupportPoints = [];
+        for(let i = 0; i < e2FaceNormals.length; i++){
+            let spInfo = e1._FindSupportPoint(e2FaceNormals[i].Scale(-1), e2.vertices[i]);
+            if(spInfo.sp == undefined) return [{ collide : false }];
+            e2SupportPoints[i] = spInfo;
+        }
+        let result = e1SupportPoints.concat(e2SupportPoints);
+        let max = Infinity;
+        let index = null;
+        for(let i = 0; i < result.length; i++){
+            if(result[i].depth < max){
+                max = result[i].depth;
+                index = i;
+            }
+        }
+        let v = e2.center.Sub(e1.center);
+        if(Vector.Dot(v, result[index].n) > 0){
+            result[index].n = result[index].n.Scale(-1);
+        }
+        result[index].collide = true;
+        return [result[index]];
+    }
+
+    function DetectPolyVsCircle(e1, e2){
+        let e1FaceNormals = e1._GetFaceNormals();
+        let e1SupportPoints = [];
+        for(let i = 0; i < e1FaceNormals.length; i++){
+            let spInfo1 = e2._FindSupportPoint(e1FaceNormals[i].Scale(-1), e1.vertices[i]);
+            if(spInfo1.sp == undefined) return [{ collide : false }];
+            e1SupportPoints[i] = spInfo1;
+        }
+        let normal = e1.center.Sub(e2.center).Unit().Scale(-1);
+        let info = e1._FindSupportPoint(normal, e2.center.Add(normal.Scale(-e2.radius)));
+        if(info.sp == undefined) return [{ collide : false }];
+        e1SupportPoints.push(info);
+        // let info2 = e1._FindSupportPoint(normal, e2.center.Add(normal.Scale(-e2.radius)));
+        // if(info2.sp == undefined) return [{ collide : false }];
+        // e1SupportPoints.push(info2);
+        let max = Infinity;
+        let index = null;
+        for(let i = 0; i < e1SupportPoints.length; i++){
+            if(e1SupportPoints[i].depth < max){
+                max = e1SupportPoints[i].depth;
+                index = i;
+            }
+        }
+        let v = e2.center.Sub(e1.center);
+        if(Vector.Dot(v, e1SupportPoints[index].n) < 0){
+            e1SupportPoints[index].n = e1SupportPoints[index].n.Scale(-1);
+        }
+        e1SupportPoints[index].collide = true;
+        return [e1SupportPoints[index]];
+    }
+    function DetectCircleVsCircle(e1, e2){
+        let rSum = e1.radius + e2.radius;
+        let vFrom1to2 = e2.center.Sub(e1.center);
+        if(vFrom1to2.LengthSquared() < Math.pow(rSum, 2)){
+            let d = rSum - vFrom1to2.Length();
+            let n = vFrom1to2.Unit();
+            let sp = e2.center.Add(n.Scale(d));
+            if(Vector.Dot(vFrom1to2, n) > 0){
+                n = n.Scale(-1);
+            }
+            return [{
+                sp : sp,
+                n : n,
+                depth : d, 
+                collide : true
+            }];
+        }else{
+            return [{ collide : false }];
+        }
+    }
+
+    function DetectPolyVsComp(e1, e2){
+        let res = [];
+        for(let i = 0; i < e2.objects.length; i++){
+            let detection = _Detect(e1, e2.objects[i]);
+            if(detection[0].collide){
+                res = res.concat(detection);
+            }
+        }
+        return res;
+    }
+
+    function DetectCircleVsComp(e1, e2){
+        let res = [];
+        for(let i = 0; i < e2.objects.length; i++){
+            let detection = _Detect(e1, e2.objects[i]);
+            if(detection[0].collide){
+                res = res.concat(detection);
+            }
+        }
+        return res;
+    }
+
+    function DetectCompVsComp(e1, e2) {
+        let res = [];
+        for(let i = 0; i < e1.objects.length; i++){
+            for(let j = 0; j < e2.objects.length; j++){
+                let detection = _Detect(e1.objects[i], e2.objects[j]);
+                if(detection[0].collide){
+                    res = res.concat(detection);
+                }
+            }
+        }
+        return res;
+    }
+
+    function Detect(e1, e2){
+        let detection;
+        if(e1.body.type == "polygon" && e2.body.type == "polygon"){
+            detection =  DetectPolyVsPoly(e1.body, e2.body);
+        }
+        if(e1.body.type == "polygon" && e2.body.type == "circle"){
+            detection = DetectPolyVsCircle(e1.body, e2.body);
+            if(detection[0].collide){
+                detection[0].n = detection[0].n.Scale(-1);
+            }
+        }
+        if(e1.body.type == "circle" && e2.body.type == "polygon"){
+            detection = DetectPolyVsCircle(e2.body, e1.body);
+        }
+        if(e1.body.type == "circle" && e2.body.type == "circle"){
+            detection = DetectCircleVsCircle(e1.body, e2.body);
+        }
+        if(e1.body.type == "composite" && e2.body.type == "polygon"){
+            detection = DetectPolyVsComp(e2.body, e1.body);
+            if(detection){
+                for(let i = 0; i < detection.length; i++){
+                    if(detection[i].collide){
+                        detection[i].n = detection[i].n.Scale(-1);
+                    }
+                }
+            }
+        }
+        if(e1.body.type == "polygon" && e2.body.type == "composite"){
+            detection = DetectPolyVsComp(e1.body, e2.body);
+        }
+        if(e1.body.type == "circle" && e2.body.type == "composite"){
+            detection = DetectCircleVsComp(e1.body, e2.body);
+        }
+        if(e1.body.type == "composite" && e2.body.type == "composite"){
+            detection = DetectCompVsComp(e1.body, e2.body);
+        }
+        if(e1.body.type == "composite" && e2.body.type == "circle"){
+            detection = DetectCircleVsComp(e2.body, e1.body);
+            if(detection){
+                for(let i = 0; i < detection.length; i++){
+                    if(detection[i].collide){
+                        detection[i].n = detection[i].n.Scale(-1);
+                    }
+                }
+            }
+        }
+        if(detection){
+            // if(detection[0].collide){
+            //     console.log(detection);
+            // }
+            return detection;
+        }
+        return [{ collide : false }];
+    }
+
+    function _Detect(e1, e2){
+        let detection;
+        if(e1.type == "polygon" && e2.type == "polygon"){
+            detection =  DetectPolyVsPoly(e1, e2);
+        }
+        if(e1.type == "polygon" && e2.type == "circle"){
+            detection = DetectPolyVsCircle(e1, e2);
+            if(detection[0].collide){
+                detection[0].n = detection[0].n.Scale(-1);
+            }
+        }
+        if(e1.type == "circle" && e2.type == "polygon"){
+            detection = DetectPolyVsCircle(e2, e1);
+        }
+        if(e1.type == "circle" && e2.type == "circle"){
+            detection = DetectCircleVsCircle(e1, e2);
+        }
+        if(detection) return detection;
+        return [{ collide : false }];
+    }
+
+    function Resolve(b1, b2, info){
+        if(b1.body.mass == Infinity && b2.body.mass == Infinity) return false;
+        if(info.collide){
+            let d = info.depth;
+            let n = info.n;
+            let e1 = b1.body;
+            let e2 = b2.body;
+            let p = info.sp;
+            const directions = {
+                left: new Vector(-1, 0),
+                right: new Vector(1, 0),
+                top : new Vector(0, -1),
+                bottom : new Vector(0, 1)
+              };
+            if (Vector.Dot(info.n, directions.left) >= Math.SQRT2 / 2) {
+                b1.sides.right.add(b2);
+                b2.sides.left.add(b1);
+            } else if (Vector.Dot(info.n, directions.right) >= Math.SQRT2 / 2) {
+                b1.sides.left.add(b2);
+                b2.sides.right.add(b1);
+            } else if (Vector.Dot(info.n, directions.top) >= Math.SQRT2 / 2) {
+                b1.sides.bottom.add(b2);
+                b2.sides.top.add(b1);
+            } else if (Vector.Dot(info.n, directions.bottom) >= Math.SQRT2 / 2) {
+                b1.sides.top.add(b2);
+                b2.sides.bottom.add(b1);
+            }
+            if(e1.mass == Infinity && e2.mass == Infinity) return;
+            let massProp;
+            if(e1.mass < e2.mass){
+                massProp = (e1.mass / e2.mass) * 100;
+                if(b1.uniqueName == "box"){
+                    if(b2.sides.left.values().next().value == undefined){
+                        b2.sides.left.add({ uniqueName : "sup" });
+                    }
+                    if(b2.sides.right.values().next().value == undefined){
+                        b2.sides.right.add({ uniqueName : "sup" });
+                    }
+                    if((b2.uniqueName == "small" && (b2.sides.left.values().next().value.uniqueName != "&&&boundry" && b2.sides.right.values().next().value.uniqueName != "&&&boundry")) || (b2.uniqueName == "tall" && (b2.sides.left.values().next().value.uniqueName != "&&&boundry" && b2.sides.right.values().next().value.uniqueName != "&&&boundry"))){
+                        e2.Translate(n.Scale(-d));   
+                    }else{
+                        e1.Translate(n.Scale((d - (d * (massProp / 100)))));
+                        e2.Translate(n.Scale(-d * (massProp / 100)));   
+                    }
+                }else if(b2.uniqueName == "box"){
+                    if(b1.sides.left.values().next().value == undefined){
+                        b1.sides.left.add({ uniqueName : "sup" });
+                    }
+                    if(b1.sides.right.values().next().value == undefined){
+                        b1.sides.right.add({ uniqueName : "sup" });
+                    }
+                    if((b1.uniqueName == "small" && (b1.sides.left.values().next().value.uniqueName != "&&&boundry" && b1.sides.right.values().next().value.uniqueName != "&&&boundry")) || (b1.uniqueName == "tall" && (b1.sides.left.values().next().value.uniqueName != "&&&boundry" && b1.sides.right.values().next().value.uniqueName != "&&&boundry"))){
+                        e2.Translate(n.Scale(d));   
+                    }else{
+                        e1.Translate(n.Scale((d - (d * (massProp / 100)))));
+                        e2.Translate(n.Scale(-d * (massProp / 100)));  
+                    }
+                }else{
+                    e1.Translate(n.Scale((d - (d * (massProp / 100)))));
+                    e2.Translate(n.Scale(-d * (massProp / 100))); 
+                }
+            }
+            if(e1.mass > e2.mass){
+                massProp = (e2.mass / e1.mass) * 100;
+                if(b1.uniqueName == "box"){
+                    if(b2.sides.left.values().next().value == undefined){
+                        b2.sides.left.add({ uniqueName : "sup" });
+                    }
+                    if(b2.sides.right.values().next().value == undefined){
+                        b2.sides.right.add({ uniqueName : "sup" });
+                    }
+                    if((b2.uniqueName == "small" && (b2.sides.left.values().next().value.uniqueName != "&&&boundry" && b2.sides.right.values().next().value.uniqueName != "&&&boundry"))|| (b2.uniqueName == "tall" && (b2.sides.left.values().next().value.uniqueName != "&&&boundry" && b2.sides.right.values().next().value.uniqueName != "&&&boundry"))){
+                        e2.Translate(n.Scale(-d));
+                    }else{
+                        e2.Translate(n.Scale(-(d - (d * (massProp / 100)))));
+                        e1.Translate(n.Scale(d * (massProp / 100))); 
+                    }
+                }else if(b2.uniqueName == "box"){
+                    if(b1.sides.left.values().next().value == undefined){
+                        b1.sides.left.add({ uniqueName : "sup" });
+                    }
+                    if(b1.sides.right.values().next().value == undefined){
+                        b2.sides.right.add({ uniqueName : "sup" });
+                    }
+                    if((b1.uniqueName == "small" && ( b1.sides.left.values().next().value.uniqueName != "&&&boundry" && b1.sides.right.values().next().value.uniqueName != "&&&boundry")) || (b1.uniqueName == "tall" && (b1.sides.left.values().next().value.uniqueName != "&&&boundry" && b1.sides.right.values().next().value.uniqueName != "&&&boundry"))){
+                        e1.Translate(n.Scale(d));
+                    }else{
+                        e2.Translate(n.Scale(-(d - (d * (massProp / 100)))));
+                        e1.Translate(n.Scale(d * (massProp / 100)));
+                    }
+                }else{
+                    e2.Translate(n.Scale(-(d - (d * (massProp / 100)))));
+                    e1.Translate(n.Scale(d * (massProp / 100)));
+                }
+            }
+            if(e1.mass == e2.mass){
+                e2.Translate(n.Scale(-d/2));
+                e1.Translate(n.Scale(d/2));
+            }
+            let rA = p.Sub(e1.center);
+            let rB = p.Sub(e2.center);
+            let wa = e1.angularVelocity;
+            let wb = e2.angularVelocity;
+            let va = e1.velocity;
+            let vb = e2.velocity;
+            let e = Math.min(e1.bounce, e2.bounce);
+            let vap = va.Add(new Vector(-wa * rA.y, wa * rA.x));
+            let vbp = vb.Add(new Vector(-wb * rB.y, wb * rB.x));
+            let relVel = vap.Sub(vbp);
+            if(Vector.Dot(relVel, n) > 0) return false;
+            let j = (-(1 + e) * Vector.Dot(relVel, n)) / (e1.inverseMass + e2.inverseMass + (Vector.Cross(rA, n) ** 2) / e1.inertia + (Vector.Cross(rB, n) ** 2) / e2.inertia);
+            let jn = n.Scale(j);
+            e1.angularVelocity += Vector.Cross(rA, jn.Scale(1 / e1.inertia));
+            e2.angularVelocity -= Vector.Cross(rB, jn.Scale(1 / e2.inertia));
+            let tangent = n.Scale(-1).Perp();
+            let friction = Math.min(e1.friction, e2.friction);
+            let j2 = (-(1 + e) * Vector.Dot(relVel, tangent) * friction) / (e1.inverseMass + e2.inverseMass + (Vector.Cross(rA, tangent) ** 2) / e1.inertia + (Vector.Cross(rB, tangent) ** 2) / e2.inertia);
+            let jt = tangent.Scale(j2);
+            e1.angularVelocity += Vector.Cross(rA, jt.Scale(1 / e1.inertia));
+            e2.angularVelocity -= Vector.Cross(rB, jt.Scale(1 / e2.inertia));
+            if(b1.uniqueName == "box"){
+                if(b2.sides.left.values().next().value == undefined){
+                    b2.sides.left.add({ uniqueName : "sup" });
+                }
+                if(b2.sides.right.values().next().value == undefined){
+                    b2.sides.right.add({ uniqueName : "sup" });
+                }
+                if((b2.uniqueName == "small" && ( b2.sides.left.values().next().value.uniqueName != "&&&boundry" && b2.sides.right.values().next().value.uniqueName != "&&&boundry")) || (b2.uniqueName == "tall"&& (b2.sides.left.values().next().value.uniqueName != "&&&boundry" && b2.sides.right.values().next().value.uniqueName != "&&&boundry"))){
+                    e2.velocity = e2.velocity.Sub(jt.Scale(e2.inverseMass));
+                    e2.velocity = e2.velocity.Sub(jn.Scale(e2.inverseMass));
+                }else{
+                    e1.velocity = e1.velocity.Add(jt.Scale(e1.inverseMass));
+                    e1.velocity = e1.velocity.Add(jn.Scale(e1.inverseMass));
+                    e2.velocity = e2.velocity.Sub(jt.Scale(e2.inverseMass));
+                    e2.velocity = e2.velocity.Sub(jn.Scale(e2.inverseMass));
+                }
+            }else if(b2.uniqueName == "box"){
+                if(b1.sides.left.values().next().value == undefined){
+                    b1.sides.left.add({ uniqueName : "sup" });
+                }
+                if(b1.sides.right.values().next().value == undefined){
+                    b2.sides.right.add({ uniqueName : "sup" });
+                }
+                if((b1.uniqueName == "small"&& (b1.sides.left.values().next().value.uniqueName != "&&&boundry" && b1.sides.right.values().next().value.uniqueName != "&&&boundry")) || (b1.uniqueName == "tall"&& (b1.sides.left.values().next().value.uniqueName != "&&&boundry" && b1.sides.right.values().next().value.uniqueName != "&&&boundry"))){
+                    e1.velocity = e1.velocity.Add(jt.Scale(e1.inverseMass));
+                    e1.velocity = e1.velocity.Add(jn.Scale(e1.inverseMass));
+                }else{
+                    e1.velocity = e1.velocity.Add(jt.Scale(e1.inverseMass));
+                    e1.velocity = e1.velocity.Add(jn.Scale(e1.inverseMass));
+                    e2.velocity = e2.velocity.Sub(jt.Scale(e2.inverseMass));
+                    e2.velocity = e2.velocity.Sub(jn.Scale(e2.inverseMass));
+                }
+            }else{
+                e1.velocity = e1.velocity.Add(jt.Scale(e1.inverseMass));
+                e1.velocity = e1.velocity.Add(jn.Scale(e1.inverseMass));
+                e2.velocity = e2.velocity.Sub(jt.Scale(e2.inverseMass));
+                e2.velocity = e2.velocity.Sub(jn.Scale(e2.inverseMass));
+            }
+            return true;
+        }
+    }
+
+    class Scene {
+        constructor(options){
+            this.entities = [];
+            this.Camera = new Camera(options.camera_options);
+            this.CENTER = new Vector(this.Camera.worldWidth/2, this.Camera.worldHeight/2);
+            this._Paused = false;
+            this.Qt = new QuadTree(new AABB(this.Camera.worldWidth/2, this.Camera.worldHeight/2, this.Camera.worldWidth, this.Camera.worldHeight), 5);
+            this.boundry = options.boundry || false;
+            this.rc = options.relaxationCount || 1;
+            this._drawQt = false;
+            this.active = false;
+            if(this.boundry){
+                let boundries = [
+                    new Rectangle(new Vector(this.Camera.worldWidth/2, 10), this.Camera.worldWidth, 20),
+                    new Rectangle(new Vector(this.Camera.worldWidth/2, this.Camera.worldHeight/1.3 - 10), this.Camera.worldWidth, 20),
+                    new Rectangle(new Vector(10, (this.Camera.worldHeight/1.3 - 10)/2), 20, this.Camera.worldHeight/1.3 - 10),
+                    new Rectangle(new Vector(this.Camera.worldWidth - 10, (this.Camera.worldHeight/1.3 - 10)/2), 20, this.Camera.worldHeight/1.3 - 10),
+                ];
+                boundries.forEach(boundry=>{
+                    boundry.mass = Infinity;
+                    boundry.inertia = Infinity;
+                    let sprite = new Paint({
+                        center : boundry.center,
+                        width : boundry.width,
+                        height : boundry.height,
+                        color : "rgb(30, 30, 30)",
+                        stroke : false,
+                        strokeStyle : "Red"
+                    });
+                    this.entities.push(new Entity({
+                        center : boundry.center,
+                        body : boundry,
+                        name : "&&&boundry",
+                        sprite : sprite
+                    }));
+                });
+            }
+        }
+
+        Contains(name){
+            let contain = false;
+            for(let i = 0; i < this.entities.length; i++){
+                if(this.entities[i].uniqueName == name){
+                    contain = true;
+                }
+            }
+            return contain;
+        }
+
+        GenerateBoundry(){
+            this.Qt = new QuadTree(new AABB(this.Camera.worldWidth/2, this.Camera.worldHeight/2, this.Camera.worldWidth, this.Camera.worldHeight), 5);
+            if(this.boundry){
+                let boundries = [
+                    new Rectangle(new Vector(this.Camera.worldWidth/2, 10), this.Camera.worldWidth, 20),
+                    new Rectangle(new Vector(this.Camera.worldWidth/2, this.Camera.worldHeight/1.3 - 10), this.Camera.worldWidth, 20),
+                    new Rectangle(new Vector(10, (this.Camera.worldHeight/1.3 - 10)/2), 20, this.Camera.worldHeight/1.3 - 10),
+                    new Rectangle(new Vector(this.Camera.worldWidth - 10, (this.Camera.worldHeight/1.3 - 10)/2), 20, this.Camera.worldHeight/1.3 - 10),
+                ];
+                boundries.forEach(boundry=>{
+                    boundry.mass = Infinity;
+                    boundry.inertia = Infinity;
+                    let sprite = new Paint({
+                        center : boundry.center,
+                        width : boundry.width,
+                        height : boundry.height,
+                        color : "rgb(30, 30, 30)",
+                        stroke : false,
+                        strokeStyle : "Red"
+                    });
+                    this.entities.push(new Entity({
+                        center : boundry.center,
+                        body : boundry,
+                        name : "&&&boundry",
+                        sprite : sprite
+                    }));
+                });
+            }
+        }
+
+        AddEntity(ent){
+            ent.AddCollision("r-&&&boundry");
+            if(ent.uniqueName != undefined && ent.uniqueName != ""){
+                this.entities.push(ent);
+            }else{
+                console.error("Error adding entity to scene");
+            }
+        }
+
+        _Update(dt){
+            this.CENTER = new Vector(this.Camera.worldWidth/2, this.Camera.worldHeight/2);
+            this.Qt.clear();
+            this.entities.forEach(ent=>{
+                // ent._Update(dt);
+                this.Qt.insert(new AABB(ent.center.x, ent.center.y, ent.width, ent.height, ent));
+            });
+            for(let i = 0; i < this.rc; i++){
+                for(let i = 0; i < this.entities.length; i++){
+                    let ent = this.entities[i];
+                    ent._Update(dt);
+                    let nearObjects = ent.Neighbours(this.Qt);
+                    if(nearObjects){
+                        nearObjects.forEach(near=>{
+                            ent.CollidingGroups.forEach(group=>{
+                                let data = Entity._GetData(group);
+                                let type = data.type;
+                                let name = data.name;
+                                if(near.userData.uniqueName == name){
+                                    if(type == "d"){
+                                        if(type + "-" + near.userData.uniqueName == group){
+                                            let collision = Detect(ent, near.userData);
+                                            if(collision[0].collide){
+                                                if(ent._cbs[group]){
+                                                    ent._cbs[group](near.userData);
+                                                    ent.sides.top.add("som");
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if(type == "r"){
+                                        if(type + "-" + near.userData.uniqueName == group){
+                                            let collision = Detect(ent, near.userData);
+                                            collision.forEach(col=>{
+                                                if(Resolve(ent, near.userData, col)){
+                                                    if(ent._cbs[group]){
+                                                        ent._cbs[group](near.userData);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                    }
+                }
+            }
+
+            this.Camera.Follow(this.Camera.target);
+            this.Camera.Update();
+        }
+
+        _Draw(c, _func){
+            this.Camera.Draw(()=>{
+                this.entities.forEach(ent=>{
+                    ent._Draw(c);
+                });
+                if(this._drawQt){
+                    this.Qt.draw(c);
+                }
+                _func(c);
+            });
+        }
+
+        Play(c, dt, func){
+            this._Draw(c, func);
+            if(!this._Paused){
+                this._Update(dt);
+            }
+        }
+
+        Pause(){
+            this._Paused = true;
+        }
+
+        Resume(){
+            this._Paused = false;
+        }
+    }
+
+    class LevelMaker{
+        constructor(can, div, cam){
+            this.level = { plats : [], platforms : [] };
+            this.start = new Vector(0, 0);
+            this.end = new Vector(0, 0);
+            this.c = can.getContext("2d");
+            this.can = can;
+            this.div = div;
+            cam.LookAt(new Vector(cam.worldWidth/2, cam.worldHeight/2));
+            this.cam = cam;
+            this.lineStarted = false;
+        }
+
+        startP(){
+            let can = this.can;
+            let div = this.div;
+            can.addEventListener("pointerdown", (e)=>{
+                if(this.lineStarted == false){
+                    let x = e.clientX;
+                    let y = e.clientY;
+                    x = (x - div.getBoundingClientRect().x);
+                    y = (y - div.getBoundingClientRect().y);
+                    x = (x * can.width )/ div.getBoundingClientRect().width;
+                    y = (y * can.height)/ div.getBoundingClientRect().height;
+                    this.start.x = (-this.cam.pos.x + x);
+                    this.start.y = (-this.cam.pos.y + y);
+                    this.end.x = (-this.cam.pos.x + x );
+                    this.end.y = (-this.cam.pos.y + y);
+                    this.lineStarted = true;
+                }
+            });
+
+            can.addEventListener("pointermove", (e)=>{
+                if(this.lineStarted){
+                    let x = e.clientX;
+                    let y = e.clientY;
+                    x = (x - div.getBoundingClientRect().x);
+                    y = (y - div.getBoundingClientRect().y);
+                    x = (x * can.width )/ div.getBoundingClientRect().width;
+                    y = (y * can.height)/ div.getBoundingClientRect().height;
+                    this.end.x = (-this.cam.pos.x + x);
+                    this.end.y = (-this.cam.pos.y + y);
+                }
+            });
+
+            can.addEventListener("pointerup", (e)=>{
+                if(this.lineStarted){
+                    let x = e.clientX;
+                    let y = e.clientY;
+                    x = (x - div.getBoundingClientRect().x);
+                    y = (y - div.getBoundingClientRect().y);
+                    x = (x * can.width )/ div.getBoundingClientRect().width;
+                    y = (y * can.height)/ div.getBoundingClientRect().height;
+                    this.end.x = (-this.cam.pos.x + x);
+                    this.end.y = (-this.cam.pos.y + y);
+                    let b = new Rectangle(new Vector((this.start.x + this.end.x)/2, (this.start.y + this.end.y)/2), Math.abs(this.end.x - this.start.x), Math.abs(this.end.y - this.start.y));
+                    b.mass = Infinity;
+                    b.inertia = Infinity;
+                    this.level.platforms.push([(this.start.x + this.end.x)/2, (this.start.y + this.end.y)/2, Math.abs(this.end.x - this.start.x), Math.abs(this.end.y - this.start.y)]);
+                    this.level.plats.push(b);
+                    this.lineStarted = false;
+                }
+            });
+
+            window.addEventListener("keydown", (e)=>{
+                let key = e.key;
+                if(key == "a") this.cam.target.center.x -= 10;
+                if(key == "d") this.cam.target.center.x += 10;
+                if(key == "w") this.cam.target.center.y -= 10;
+                if(key == "s") this.cam.target.center.y += 10;
+
+            }); 
+
+        }
+
+        static drawRect(x, y, w, h, c){
+            c.save();
+            c.fillStyle = "rgba(100, 200, 200, 0.4)";
+            c.fillRect(x - w/2, y - h/2, w, h);
+            c.restore();
+        }
+
+        back(){
+            this.level.plats.splice(this.level.plats.length - 1, 1);
+            this.level.platforms.splice(this.level.platforms.length - 1, 1);
+        }
+
+        export(){
+            let textField = document.createElement("input");
+            textField.style.width = "200px";
+            textField.style.height = "200px";
+            document.body.appendChild(textField);
+            for(let i = 0; i < this.level.platforms.length; i++){
+                for(let j = 0; j < this.level.platforms[i].length; j++){
+                    textField.value += Math.round(this.level.platforms[i][j]) + ",";
+                }
+            }
+        }
+
+        show(){
+            let c = this.c;
+            c.save();
+            c.strokeStyle = "rgba(150, 200, 100, 1)";
+            c.beginPath();
+            c.moveTo(this.start.x, this.start.y);
+            c.lineTo(this.end.x, this.end.y);
+            c.closePath();
+            if(this.start.Length() != 0 && this.end.Length() != 0 && this.lineStarted){
+                c.stroke();
+            }
+            c.restore();
+            this.level.plats.forEach(plat=>{
+                plat.Draw(c);
+            });
+            LevelMaker.drawRect((this.start.x + this.end.x)/2, (this.start.y + this.end.y)/2, Math.abs(this.end.x - this.start.x), Math.abs(this.end.y - this.start.y), c);
+        }
+    }
+
+    class LevelParser{
+        constructor(levelData){
+            this.levelData = levelData;
+        }
+
+    static random(min, max){
+        return Math.random() * (max - min) + min;
+    }
+
+    static drawTriangle(c, x, y, size, angle){
+        c.save();
+        c.translate(x, y);
+        c.rotate(angle);
+        c.fillStyle = "white";
+        c.lineWidth = 2;
+        c.beginPath();
+        c.moveTo(0,-size/2);
+        c.lineTo(-size/2 - size/6,size/2);
+        c.lineTo(size/2 + size/6, size/2);
+        c.closePath();
+        c.fill();
+        c.restore();
+    }
+
+    getSpikes(spikes){
+        let keyEnts = [];
+        for(let i = 0; i <= spikes.length-4; i += 4){
+            let pB = new Rectangle(new Vector(spikes[i], spikes[i + 1]), spikes[i + 2], spikes[i + 3]);
+            pB.mass = Infinity;
+            pB.inertia = Infinity;
+            let sprite = new Custom((c)=>{
+                for(let j = 0; j < Math.floor(pB.width/40); j++){
+                    LevelParser.drawTriangle(c, pB.center.x - pB.width/2 + 15 + j * 45, pB.center.y, 30, 0);
+                }
+            });
+            sprite.width = pB.width;
+            sprite.height = pB.height;
+            let e = new Entity({
+                name : `spike-${Math.round(LevelParser.random(0, 1000000))}`,
+                body : pB,
+                sprite : sprite,
+            });
+            e.width = pB.width;
+            e.height = pB.height;
+            keyEnts.push(e);
+        }
+        return keyEnts;
+    }
+
+    getLaser(laserData, scene, audio){
+        let lasers = [];
+        let btns = [];
+        for(let i = 0; i <= laserData.length - 8; i += 8){
+            let laserRect = new Rectangle(new Vector(laserData[i], laserData[i + 1]), laserData[i + 2], laserData[i + 3]);
+            laserRect.mass = Infinity;
+            laserRect.inertia = Infinity;
+            let colors = [`rgb(${LevelParser.random(200, 255)}, 10, 10)`, `rgb(255, 250, ${LevelParser.random(10, 50)})`];
+            let laser = new Entity({
+                name : `laser-${LevelParser.random(0, 100000)}`,
+                body : laserRect,
+            });
+            let sprite = new Custom((c)=>{
+                if(laser.props.active){
+                    c.save();
+                   // c.shadowBlur = 10;
+                 //   c.shadowColor = '#FEF1BA';
+                    c.fillStyle = colors[Math.floor(LevelParser.random(0, 1.9))];
+                    c.fillRect(laserRect.center.x - laserRect.width/2, laserRect.center.y - laserRect.height/2, laserRect.width, laserRect.height);
+                    c.restore();
+                }
+                c.fillStyle = "rgb(100, 100, 100)";
+                c.fillRect(laserRect.center.x - 1.5 * laserRect.width, laserRect.center.y - laserRect.height/2, 3 * laserRect.width, laserRect.height/6);
+                c.fillRect(laserRect.center.x - 1.5 * laserRect.width, laserRect.center.y + laserRect.height/2 - laserRect.height/6, 3 * laserRect.width, laserRect.height/6);
+            });
+            laser.sprite = sprite;
+            laser.props = {
+                active : true,
+            };
+            lasers.push(laser);
+            let btnRect = new Rectangle(new Vector(laserData[i + 4], laserData[i + 5]), laserData[i + 6], laserData[i + 7]);
+            btnRect.mass = Infinity;
+            btnRect.inertia = Infinity;
+            let s = new Custom((c)=>{
+                if(laser.props.active){
+                    c.fillStyle = "rgb(50, 200, 50)";
+                    c.beginPath();
+                    c.arc(btnRect.center.x, btnRect.center.y, btnRect.width/2.5, Math.PI, 2 * Math.PI);
+                    c.closePath();
+                    c.fill();
+                }else{
+                    c.fillStyle = "rgb(200, 50, 50)";
+                    c.beginPath();
+                    c.arc(btnRect.center.x, btnRect.center.y, btnRect.width/3, Math.PI, 2 * Math.PI);
+                    c.closePath();
+                    c.fill();
+                }
+                c.fillStyle = "rgb(100, 100, 100)";
+                c.fillRect(btnRect.center.x - btnRect.width/2, btnRect.center.y - btnRect.height/4, btnRect.width, btnRect.height/1.5);
+            });
+            let btn = new Entity({
+                name : `btn-${LevelParser.random(0, 10000)}`,
+                body : btnRect,
+                sprite : s
+            });
+            btn.props = {
+                laser : laser
+            }
+            btns.push(btn);
+            btn.CollidingGroups.clear();
+            btn.AddCollision("d-big", (e)=>{
+                btn.props.laser.props.active = false;
+                if(e.props.played2){
+                    audio.play();
+                    btn.props.e = e;
+                    e.props.played2 = false;
+                }
+            });
+            btn.AddCollision("d-small", (e)=>{
+                btn.props.laser.props.active = false;
+                if(e.props.played2){
+                    btn.props.e = e;
+                    audio.play();
+                    e.props.played2 = false;
+                }
+            });
+            btn.AddCollision("d-tall", (e)=>{
+                laser.props.active = false;
+                if(e.props.played2){
+                    btn.props.e = e;
+                    audio.play();
+                    e.props.played2 = false;
+                }
+            });
+            btn.AddCollision("d-box", (e)=>{
+                laser.props.active = false;
+        
+            });
+            scene.AddEntity(btn);
+        }
+        return [lasers, btns];
+    }
+
+    getPortal(portal, name = "portal"){
+        let p;
+        for(let i = 0; i < portal.length; i++){
+            let pB  = new Rectangle(new Vector(portal[0], portal[1]), portal[2], portal[3]);
+            pB.mass = Infinity;
+            pB.inertia = Infinity;
+            p = new Entity({
+                name : name,
+                body : pB,
+                //sprite : new Custom((c)=>{})
+            });
+            p.width = pB.width;
+            p.height = pB.height;
+        }
+        return p;
+    }
+
+    getKeys(keys, img){
+        let keyEnts = [];
+        for(let i = 0; i <= keys.length-4; i += 4){
+            let pB = new Rectangle(new Vector(keys[i], keys[i + 1]), keys[i + 2], keys[i + 3]);
+            pB.mass = Infinity;
+            pB.inertia = Infinity;
+            let sprite = new Texture({
+                center : pB.center,
+                width : pB.width,
+                height : pB.height,
+                image : img
+            });
+            let e = new Entity({
+                name : `key-${Math.round(LevelParser.random(0, 1000000))}`,
+                body : pB,
+                sprite : sprite,
+            });
+            e.width = pB.width;
+            e.height = pB.height;
+            keyEnts.push(e);
+        }
+        return keyEnts;
+    }
+
+    getDoors(doors, img){
+        let doorEnts = [];
+        for(let i = 0; i <= doors.length-4; i += 4){
+            let pB = new Rectangle(new Vector(doors[i], doors[i + 1]), doors[i + 2], doors[i + 3]);
+            pB.mass = Infinity;
+            pB.inertia = Infinity;
+            let sprite = new Texture({
+                center : pB.center,
+                width : pB.width,
+                height : pB.height,
+                image : img
+            });
+            let e = new Entity({
+                name : `door-${Math.round(LevelParser.random(0, 1000000))}`,
+                body : pB,
+                sprite : sprite,
+            });
+            e.width = pB.width;
+            e.height = pB.height;
+            doorEnts.push(e);
+        }
+        return doorEnts;
+    }
+
+    getBoxes(portal, img){
+        let p = [];
+        for(let i = 0; i <= portal.length-4; i += 4){
+            let pB  = new Rectangle(new Vector(portal[i], portal[i + 1]), portal[i + 2], portal[i + 3]);
+            pB.friction = 0.8;
+            pB.acceleration.y = 800;
+            pB.mass = 2;
+            pB.bounce = 0.1;
+            pB.inertia = Infinity;
+            let tex = new Texture({
+                image : img,
+                width : pB.width, 
+                height : pB.height,
+                center : pB.center
+            });
+            let e = new Entity({
+                name : "box",
+                center : pB.center,
+                body : pB,
+                sprite : tex
+            });
+            e.width = pB.width;
+            e.height = pB.height;
+            p.push(e);
+        }
+        return p;
+    }
+
+    getEntities(){
+            let entitites = [];
+            for(let i = 0; i <= this.levelData.length - 4; i += 4){
+                let b = new Rectangle(new Vector(this.levelData[i], this.levelData[i + 1]), this.levelData[i + 2], this.levelData[i + 3]);
+                b.mass = Infinity;
+                b.inertia = Infinity;
+                let sprite = new Paint({
+                    center : b.center,
+                    width : b.width,
+                    height : b.height,
+                    color : "rgb(30, 30, 30)"
+                });
+                let e = new Entity({
+                    name : `plat-${LevelParser.random(0, 1000000)}`,
+                    body : b,
+                    sprite : sprite
+                });
+                entitites.push(e);
+            }
+            return entitites;
+    }
+
+    getCover(levelCover){
+        let entities = [];
+        for(let i = 0; i <= levelCover.length - 4; i += 4){
+            let b = new Rectangle(new Vector(levelCover[i], levelCover[i + 1]), levelCover[i + 2], levelCover[i + 3]);
+            b.mass = Infinity;
+            b.inertia = Infinity;
+            let sprite = new Paint({
+                center : b.center,
+                width : b.width,
+                height : b.height,
+                color : "rgb(30, 30, 30)",
+                strokeStyle : "Red"
+            });
+            let e = new Entity({
+                name : `plat-${LevelParser.random(0, 1000000)}`,
+                body : b,
+                sprite : sprite
+            });
+            entities.push(e);
+        }
+        return entities;
+    }
+
+    }
+
+    class Game {
+        constructor(options){
+            options = options || {};
+            this.Screen = new Screen(options.width, options.height);
+            options.Mainscene.camera_options.c = this.Screen.Main.getContext("2d");
+            this.Scenes = {
+                "Main" : new Scene(options.Mainscene)  
+            };
+            this.CurrentScene = "Main";
+            this.Scene = this.Scenes[this.CurrentScene];
+            this.Update = () => {};
+            this.Draw = () => {};
+            this.DrawLayers = () => {};
+            this.DrawTopLayers = () => {};
+            this._Paused = false;
+            this.Layers = {
+                "Top" : this.Screen
+            }
+            this._t0 = performance.now();
+            this._t1 = 0;
+            this._Dt = 0;
+            this._Init();
+            this._ScreenNames = [];
+            this.sceneTrans = false;
+            this.sceneTransName = function(){}
+            this._tt = 0;
+            this._ScreenNames.push("Top");
+        }
+
+        AddScene(name, scene){
+            this.Scenes[name] = scene;
+        }
+
+        SceneTrans(name){
+            this.sceneTrans = true;
+            this.sceneTransName = name;
+            this._tt = 0;
+            this._ran = false;
+        }
+
+        _Loop = () => {
+            this._t1 = performance.now();
+            this._Dt = this._t1 - this._t0;
+            if(this._Dt > 18) this._Dt = 18;
+            this._Dt /= 1000;
+            this.Start();
+            if(!this._Paused){
+                this.Scene = this.Scenes[this.CurrentScene];
+                for(let i = 0; i < this._ScreenNames.length; i++){
+                    this.Layers[this._ScreenNames[i]]._Resize();
+                }
+                this.Update(this._Dt, this.Scenes[this.CurrentScene]);
+                DrawUtil.Clear(this.Screen.Main.getContext("2d"));
+                this.Scenes[this.CurrentScene].Camera.Draw(()=>{
+                    this.Draw(this.Screen.Main.getContext("2d"));
+                });
+                this.Scenes[this.CurrentScene].Play(this.Screen.Main.getContext("2d"), this._Dt, this.DrawLayers);
+                if(this.sceneTrans){
+                    let c = this.Screen.Main.getContext("2d");
+                    this._tt -= 0.03;
+                    if(this._tt <= -Math.PI/2){
+                        if(!this._ran){
+                            this.sceneTransName();
+                            this._ran = true;
+                        }
+                    }
+                    if(this._tt <= -Math.PI){
+                        this.sceneTrans = false;
+                    }
+                    c.fillStyle = `rgba(0, 0, 0, ${Math.abs(Math.sin(this._tt))})`;
+                    c.fillRect(0, 0, this.Screen.Main.width, this.Screen.Main.height);
+                }
+                this.DrawTopLayers(this.Screen.Main.getContext("2d"));
+                this._t0 = this._t1;
+            }
+        }
+        _CheckLayerExist(name){
+            if(this.Layers[name] == undefined){
+                console.error("Layer with name : " + name + " not exist.");
+                return false;
+            }
+            return true;
+        }
+        AddLayer(name){
+            if(this.Layers[name] !== undefined){
+                console.error("Layer with name : " + name + " Already exist.");
+                return;
+            }
+            this._ScreenNames.push(name);
+            let screen = new Screen(this.Screen.width, this.Screen.height);
+            this.Layers[name] = screen;
+            this.Screen.div.appendChild(screen.Main);
+            return screen.Main;
+        }
+        RemoveLayer(name){
+            if(!this._CheckLayerExist(name)) return;
+            this.Screen.div.removeChild(this.Layers[name].Main);
+        }
+        HideLayer(name){
+            if(!this._CheckLayerExist(name)) return;
+            this.Layers[name].Main.style.display = "none";
+        }
+        ShowLayer(name){
+            if(!this._CheckLayerExist(name)) return;
+            this.Layers[name].Main.style.display = "block";
+        }
+        _Init(){
+            document.body.style.background = "lightgray";
+            this.Screen.Main.style.border = "2px solid black";
+        }
+        Start(){
+            this._Raf = requestAnimationFrame(this._Loop);
+        }
+        Pause(){
+            this._Paused = true;
+        }
+        Resume(){
+            this._Paused = false;
+        }
+        Stop(){
+            cancelAnimationFrame(this._Raf);
+        }
+    }
+
+    class DrawUtil {
+        constructor(ctx){
+            this.ctx = ctx;
+        }
+
+        static Clear(c){
+            //c.clearRect(0, 0, c.canvas.width, c.canvas.height);
+            c.save();
+            c.fillStyle = "rgba(10, 20, 30, 1)";
+            c.fillRect(0, 0, c.canvas.width, c.canvas.height);
+            c.restore();
+        }
+
+        Line(start, end, params){
+            this.ctx.save();
+            params = params || { stroke : "black" };
+            this.ctx.strokeStyle = params.stroke;
+            this.ctx.beginPath();
+            this.ctx.moveTo(start.x, start.y);
+            this.ctx.lineTo(end.x, end.y);
+            this.ctx.closePath();
+            this.ctx.stroke();
+            if(params.fill){
+                this.ctx.fillStyle = params.fill;
+                this.ctx.fill();
+            }
+            this.ctx.restore();
+        }
+
+        Circle(center, radius, params){
+            this.ctx.save();
+            params = params || { stroke : "black" };
+            this.ctx.strokeStyle = params.stroke;
+            this.ctx.beginPath();
+            this.ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI);
+            this.ctx.closePath();
+            if(params.fill){
+                this.ctx.fillStyle = params.fill;
+                this.ctx.fill();
+            }
+            this.ctx.restore();
+        }
+    }
+
+    class Sprite {
+        constructor(position){
+            this.center = position;
+            this.angle = 0;
+        }
+    }
+
+    class Custom{
+        constructor(draw, rect){
+            this.Draw = draw;
+        }
+
+    _Draw(c){
+        this.Draw(c, this.t, this.t2);
+    }
+
+    }
+
+    class Paint extends Sprite{
+        constructor(options){
+            super(options.center);
+            this.color = options.color;
+            this.type = "colorFill";
+            this.offSet = options.offSet || { x : 0, y : 0 };
+            this.width = options.width || 100;
+            this.height = options.height || 100;
+            this.stroke = options.stroke || true;
+            this.strokeStyle = options.strokeStyle;
+        }
+        _Draw(c){   
+            c.save();
+            c.fillStyle = this.color || "rgb(50, 200, 100)";
+            c.fillRect(this.center.x - this.width/2, this.center.y - this.height/2, this.width, this.height);
+            c.lineWidth = 3;
+            if(this.strokeStyle != "Red"){
+                c.strokeStyle = this.strokeStyle || "white";
+                c.strokeRect(this.center.x - this.width/2, this.center.y - this.height/2, this.width, this.height);
+            }
+            c.restore();
+        }
+    }
+
+    class Texture extends Sprite {
+        constructor(options){
+            super(options.center);
+            this.image = options.image;
+            this.offSet = options.offSet || { x : 0, y : 0 };
+            this.width = options.width || 100;
+            this.height = options.height || 100;
+            this.xWidth = this.image.width;
+            this.xHeight = this.image.height;
+            this.angle = options.angle || 0;
+            this.type = "texture";
+        }
+
+        _Draw(c){
+            if(this.image){
+                c.save();
+                c.translate(this.center.x, this.center.y);
+                c.rotate(this.angle);
+                c.drawImage(this.image, 0, 0, this.xWidth, this.xHeight, this.offSet.x - this.width/2, this.offSet.y - this.height/2, this.width, this.height);
+                c.restore();
+            }
+        }
+
+    }
+
+    class Body{
+        constructor(center){
+            this.center = center;
+            this.mass = 1;
+            this.inertia = 5000;
+            this.vertices = [];
+            this.velocity = new Vector(0, 0);
+            this.acceleration = new Vector(0, 0);
+            this.angularVelocity = 0;
+            this.angularAcceleration = 0;
+            this.angle = 0;
+            this.bounce = 1;
+            this.friction = 0.1;
+        }
+
+        get inverseMass(){
+            if(this.mass == 0) return 0;
+            else return (1 / this.mass);
+        }
+
+        _MomentIntegration(dt){
+            this.velocity = this.velocity.AddScaled(this.acceleration, dt);
+            this.center = this.center.AddScaled(this.velocity, dt);
+            for(let i = 0; i < this.vertices.length; i++){
+                this.vertices[i] = this.vertices[i].AddScaled(this.velocity, dt);
+            }
+            this.angularVelocity += this.angularAcceleration * dt;
+            this.Rotate(this.angularVelocity * dt);
+        }
+
+        Rotate(angle, center = this.center){
+            this.angle += angle;
+            this.center = this.center.Rotate(angle, center);
+            for(let i = 0; i < this.vertices.length; i++){
+                this.vertices[i] = this.vertices[i].Rotate(angle, center);
+            }
+        }
+
+        Translate(vector){
+            this.center = this.center.Add(vector);
+            for(let i = 0; i < this.vertices.length; i++){
+                this.vertices[i] = this.vertices[i].Add(vector);
+            }
+        }
+        _GetFaceNormals(){
+            let fn = [];
+            for(let i = 0; i < this.vertices.length; i++){
+                fn[i] = this.vertices[(i + 1) % this.vertices.length].Sub(this.vertices[i]).Perp().Unit()
+            }
+            return fn;
+        }
+
+        _FindSupportPoint(n, ptOnEdge){
+            let max = -Infinity;
+            let index =  false;
+            for(let i = 0; i < this.vertices.length; i++){
+                let v = this.vertices[i].Sub(ptOnEdge);
+                let proj = Vector.Dot(n, v);
+                if(proj > 0 && proj > max){
+                    max = proj;
+                    index = i;
+                }
+            }
+            return { sp : this.vertices[index], depth : max, n : n };
+        }
+
+        Draw(c){
+            c.save();
+            c.strokeStyle = "white";
+            c.lineWidth = 2;
+            c.beginPath();
+            for(let i = 0; i < this.vertices.length; i++){
+                c.moveTo(this.vertices[i].x, this.vertices[i].y);
+                c.lineTo(this.vertices[(i + 1) % this.vertices.length].x, this.vertices[(i + 1) % this.vertices.length].y);
+            }
+            c.closePath();
+            c.stroke();
+            c.restore();
+        }
+    }
+
+    class Rectangle extends Body{
+        constructor(center, width, height){
+            super(center);
+            this.width = width;
+            this.height = height;
+            this.vertices = [
+                new Vector(this.center.x - this.width/2, this.center.y - this.height/2),
+                new Vector(this.center.x + this.width/2, this.center.y - this.height/2),
+                new Vector(this.center.x + this.width/2, this.center.y + this.height/2),
+                new Vector(this.center.x - this.width/2, this.center.y + this.height/2),
+            ];
+            this.boundingRect = {
+                width : Math.sqrt(width * width + height * height),
+                height : Math.sqrt(width * width + height * height)
+            };
+            this.type = "polygon";
+        }
+    }
+
+    class Circle extends Body {
+        constructor(center, radius){
+            super(center);
+            this.radius = radius;
+            this.boundingRect = {
+                width : 2.3 * this.radius,
+                height : 2.3 * this.radius
+            }
+            this.type = "circle";   
+        }
+
+        _FindSupportPoint(n, ep){
+            let circVerts = [];
+            circVerts[0] = this.center.Add(n.Scale(this.radius));
+            circVerts[1] = this.center.Add(n.Scale(-this.radius));
+            let max = -Infinity;
+            let index = null;
+            for(let i = 0; i < circVerts.length; i++){
+                let v = circVerts[i].Sub(ep);
+                let proj = Vector.Dot(v, n);
+                if(proj > 0 && proj > max){
+                    max = proj;
+                    index = i;
+                }
+            }   
+            return { sp : circVerts[index], depth : max, n : n };
+        }
+    
+        _FindNearestVertex(verts){
+            let max = Infinity;
+            let index = null;
+            for(let i = 0; i < verts.length; i++){
+                let v = verts[i].Sub(this.center);
+                let dist = v.LengthSquared();
+                if(dist < max){
+                    max = dist;
+                    index = i;
+                }
+            }
+            return verts[index];
+        }
+
+        Draw(c){
+            c.save();
+            c.strokeStyle = "white";
+            c.lineWidth = 2;
+            c.beginPath();
+            c.arc(this.center.x, this.center.y, this.radius, 0, 2 * Math.PI);
+            c.closePath();
+            c.stroke();
+            c.beginPath();
+            c.moveTo(this.center.x, this.center.y);
+            c.lineTo(this.center.x + Math.cos(this.angle) * this.radius, this.center.y + this.radius * Math.sin(this.angle));
+            c.closePath();
+            c.stroke();
+            c.restore();
+        }
+    }
+
+    class Polygon extends Body{
+        constructor(center, n, size){
+            super(center);
+            this.n = n;
+            this.size = size;
+            this.vertices = [];
+            let minX = Infinity, minY = Infinity;
+            let maxX = -Infinity, maxY = -Infinity;
+            this.type = "polygon";
+            for(let i = 0; i < n; i++){
+                this.vertices.push(new Vector(this.center.x + this.size * Math.cos(i * ((2 * Math.PI) / n)), this.center.y + this.size * Math.sin(i * ((2 * Math.PI) / n))));
+                if(this.vertices[i].x < minX) minX = this.vertices[i].x;
+                if(this.vertices[i].y < minY) minY = this.vertices[i].y;
+                if(this.vertices[i].x > maxX) maxX = this.vertices[i].x;
+                if(this.vertices[i].y > maxY) maxY = this.vertices[i].y;
+            }
+            this.boundingRect = {
+                width : 2 * this.size,
+                height : 2 * this.size
+            }
+        }
+    }
+
+    class Composite extends Body{
+        constructor(objects){
+            let verts = [];
+            let mass = 0;
+            let max = -Infinity;
+            for(let i = 0; i < objects.length; i++){
+                mass += objects[i].mass;
+                for(let j = 0; j < objects[i].mass; j++){
+                    verts.push(objects[i].center);
+                }
+            }
+            let pos = Vector.Average(verts);
+            super(pos);
+            for(let i = 0; i < objects.length; i++){
+                for(let j = 0; j < objects[i].vertices.length; j++){
+                    let v = objects[i].vertices[j].Sub(this.center);
+                    let mag = v.LengthSquared();
+                    if(mag > max){
+                        max = mag;
+                    }
+                }
+            }
+            this.boundingRect = {
+                width : 2 * Math.sqrt(max),
+                height : 2 * Math.sqrt(max)
+            }
+            this.objects = objects;
+            this.type = "composite";
+            this.mass = mass;
+        }
+
+        _MomentIntegration(dt){
+            this.velocity = this.velocity.AddScaled(this.acceleration, dt);
+            for(let i = 0; i < this.objects.length; i++){
+                this.objects[i]._MomentIntegration(dt);
+                let obj = this.objects[i];
+                obj.center = obj.center.AddScaled(this.velocity, dt);
+                for(let i = 0; i < obj.vertices.length; i++){
+                    obj.vertices[i] = obj.vertices[i].AddScaled(this.velocity, dt);
+                }
+            }
+            this._UpdatePos();
+            this.angularVelocity += this.angularAcceleration * dt;
+            for(let i = 0; i < this.objects.length; i++){
+                let obj = this.objects[i];
+                obj.Rotate(this.angularVelocity * dt, this.center);
+            }
+        }
+
+        _UpdatePos(){
+            let verts = [];
+            for(let i = 0; i < this.objects.length; i++){
+                for(let j = 0; j < this.objects[i].mass; j++){
+                    verts.push(this.objects[i].center);
+                }
+            }
+            this.center = Vector.Average(verts);
+        }
+
+        Translate(vec){
+            for(let i = 0; i < this.objects.length; i++){
+                this.objects[i].Translate(vec);
+            }
+            this._UpdatePos();
+        }
+
+        Rotate(angle){    
+            for(let i = 0; i < this.objects.length; i++){
+                let obj = this.objects[i];
+                obj.Rotate(angle, this.center);
+            }
+        }
+
+        Draw(c){
+            c.save();
+            for(let i = 0; i < this.objects.length; i++){
+                this.objects[i].Draw(c);
+            }
+            c.fillStyle = "red";
+            c.beginPath();
+            c.arc(this.center.x, this.center.y, 5, 0, 2 * Math.PI);
+            c.closePath();
+            c.fill();
+            c.restore();
+        }   
+    }
+
+    class Controller{
+        constructor(ent, speed, jumpVelocity){
+            this.ent = ent;
+            this.speed = speed || 100;
+            this.jumpVelocity = jumpVelocity || this.speed;
+            window.addEventListener("keydown", (e)=>{
+                if(ent.sides.bottom.size > 0){
+                    let key = e.key;
+                    if(key == "a") ent.body.velocity.x = -this.speed;
+                    if(key == "d") ent.body.velocity.x = this.speed;
+                    if(key == "w") ent.body.velocity.y = -this.jumpVelocity;
+                }
+            }); 
+            window.addEventListener("keyup", (e)=>{
+                let key = e.key;
+                if(key == "a") ent.body.velocity.x = 0;
+                if(key == "d") ent.body.velocity.x = 0;
+            });
+        }
+    }
+
+    function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+        if (typeof stroke === 'undefined') {
+            stroke = true;
+        }
+        if (typeof radius === 'undefined') {
+            radius = 5;
+        }
+        if (typeof radius === 'number') {
+            radius = {tl: radius, tr: radius, br: radius, bl: radius};
+        } else {
+            var defaultRadius = {tl: 0, tr: 0, br: 0, bl: 0};
+            for (var side in defaultRadius) {
+            radius[side] = radius[side] || defaultRadius[side];
+            }
+        }
+        ctx.beginPath();
+        ctx.moveTo(x + radius.tl, y);
+        ctx.lineTo(x + width - radius.tr, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
+        ctx.lineTo(x + width, y + height - radius.br);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
+        ctx.lineTo(x + radius.bl, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
+        ctx.lineTo(x, y + radius.tl);
+        ctx.quadraticCurveTo(x, y, x + radius.tl, y);
+        ctx.closePath();
+        if (fill) {
+            ctx.fillStyle = fill;
+            ctx.fill();
+        }
+        if (stroke) {
+            ctx.strokeStyle = stroke;
+            ctx.stroke();
+        }
+
+}
+
+    class _JS_State{
+        constructor(){
+            this.on = false;
+            this.id = null;
+        }
+    }
+    class Joystick{
+        constructor(options = {}){
+            this.innerRadius = 25;
+            this.outerRadius = 55;
+            this.state = new _JS_State();
+            this.outerCenter  = options.center || {
+                x : undefined,
+                y : undefined
+            }
+            this.innerCenter = {};
+            this.innerCenter.x = options.center.x;
+            this.innerCenter.y = options.center.y;
+            this.__type = undefined;
+            this.mainDiv = undefined;
+            this.innerDiv = undefined;
+            this.ctx = undefined;
+            this.mainDiv = document.createElement("div");
+            this.mainDiv.style.borderRadius = "50%";
+            this.innerDiv = document.createElement("div");
+            this.innerDiv.style.borderRadius = "50%";
+            this.mainDiv.style.position = "absolute";
+            this.innerDiv.style.position = "absolute";
+            this.mainDiv.style.width = 2 * this.outerRadius + "px";
+            this.innerDiv.style.width = 2 * this.innerRadius + "px";
+            this.mainDiv.style.height = 2 * this.outerRadius + "px";
+            this.innerDiv.style.height = 2 * this.innerRadius + "px";
+            this.mainDiv.style.backgroundColor = "black";
+            this.innerDiv.style.backgroundColor = "red";
+            document.body.appendChild(this.mainDiv);
+            document.body.appendChild(this.innerDiv);
+            this.mainDiv.style.zIndex = -1;
+            this.innerDiv.style.zIndex = -1;
+            this.mainDiv.style.left = options.center.x - this.mainDiv.getBoundingClientRect().width/2 + "px";
+            this.mainDiv.style.top = options.center.y - this.mainDiv.getBoundingClientRect().width/2 + "px";
+            this.innerDiv.style.left = options.center.x - this.innerDiv.getBoundingClientRect().width/2 + "px";
+            this.innerDiv.style.top = options.center.y - this.innerDiv.getBoundingClientRect().width/2 + "px";
+        }
+
+        Mag(){
+            return Math.sqrt((this.innerCenter.x - this.outerCenter.x) * (this.innerCenter.x - this.outerCenter.x) + (this.innerCenter.y - this.outerCenter.y) * (this.innerCenter.y - this.outerCenter.y));
+        }
+    
+        getDirX(){
+            if(this.Mag() == 0) return 0;
+            return (this.innerCenter.x - this.outerCenter.x) / this.Mag();
+        }
+    
+        getDirY(){
+            if(this.Mag() == 0) return 0;
+            return (this.innerCenter.y - this.outerCenter.y) / this.Mag();
+        }
+    
+        getAngle(){
+            return Math.atan2(this.getDirY(), this.getDirX());
+        }
+    
+        show(){
+            if(this._type == "canvas"){
+                let c  = this.ctx;
+                c.save();
+                if(!this.state.on) c.fillStyle = "rgba(100, 100, 100, 0.7)"; 
+                else c.fillStyle = "rgba(100, 100, 100, 0.2)"; 
+                c.beginPath();
+                c.arc(this.outerCenter.x, this.outerCenter.y, this.outerRadius, 0, 2 * Math.PI);
+                c.closePath();
+                c.fill();
+                c.fillStyle = "rgba(70, 12, 130, 0.3)";
+                c.beginPath();
+                c.arc(this.innerCenter.x, this.innerCenter.y, this.innerRadius, 0, 2 * Math.PI);
+                c.closePath();
+                c.fill();
+                c.restore();
+            }
+        }
+    
+        dist(x, y){
+            return Math.sqrt((x - this.outerCenter.x) * (x - this.outerCenter.x) + (y - this.outerCenter.y) * (y - this.outerCenter.y));
+        }
+    
+        static distan(a, b, c, d){
+            return Math.sqrt( (c - a) * (c - a) + (d - b) * (d - b));
+        }
+    
+        follow(x, y){
+            this.innerCenter.x = x;
+            this.innerCenter.y = y;
+        }
+    
+        static Activate(canvas, joysticks, can, div){
+            joysticks.forEach(js=>{
+                if(canvas["getContext"]){
+                    js._type = "canvas";
+                    js.innerDiv.style.display = "none";
+                    js.mainDiv.style.display = "none";
+                    js.ctx = canvas.getContext("2d");
+                }else js._type = "html";
+            });
+            canvas.addEventListener("pointerdown", (e)=>{
+                let x = e.clientX;
+                let y = e.clientY;
+                x = (x - div.getBoundingClientRect().x);
+                y = (y - div.getBoundingClientRect().y);
+                x = (x * can.width )/ div.getBoundingClientRect().width;
+                y = (y * can.height)/ div.getBoundingClientRect().height;
+                joysticks.forEach(js=>{
+                    if(js.dist(x, y) < js.outerRadius){
+                        js.state.on = true;
+                        js.state.id = e.pointerId;
+                        js.innerCenter.x = x;
+                        js.innerCenter.y = y;
+                        if(js._type == "html"){
+                            js.mainDiv.style.left = js.outerCenter.x - js.mainDiv.getBoundingClientRect().width/2 + "px";
+                            js.mainDiv.style.top = js.outerCenter.y - js.mainDiv.getBoundingClientRect().width/2 + "px";
+                            js.innerDiv.style.left = js.innerCenter.x - js.innerDiv.getBoundingClientRect().width/2 + "px";
+                            js.innerDiv.style.top = js.innerCenter.y - js.innerDiv.getBoundingClientRect().width/2 + "px";
+                        }
+                    }
+                });
+            });
+            
+            canvas.addEventListener("pointermove", (e)=>{
+                let x = e.clientX;
+                let y = e.clientY;
+                x = (x - div.getBoundingClientRect().x);
+                y = (y - div.getBoundingClientRect().y);
+                x = (x * can.width )/ div.getBoundingClientRect().width;
+                y = (y * can.height)/ div.getBoundingClientRect().height;
+                joysticks.forEach(js=>{
+                    if(e.pointerId == js.state.id){
+                        js.innerCenter.x = x;
+                        js.innerCenter.y = y;
+                        if(Joystick.distan(js.innerCenter.x, js.innerCenter.y, js.outerCenter.x, js.outerCenter.y) > js.outerRadius){
+                            js.innerCenter.x =  js.outerCenter.x + js.outerRadius * Math.cos(js.getAngle());
+                            js.innerCenter.y = js.outerCenter.y +  js.outerRadius * Math.sin(js.getAngle());
+                        }
+                        if(js._type == "html"){
+                            js.mainDiv.style.left = js.outerCenter.x - js.mainDiv.getBoundingClientRect().width/2 + "px";
+                            js.mainDiv.style.top = js.outerCenter.y - js.mainDiv.getBoundingClientRect().width/2 + "px";
+                            js.innerDiv.style.left = js.innerCenter.x - js.innerDiv.getBoundingClientRect().width/2 + "px";
+                            js.innerDiv.style.top = js.innerCenter.y - js.innerDiv.getBoundingClientRect().width/2 + "px";
+                        }
+                    }
+                });
+            });
+            
+            canvas.addEventListener("pointerup", (e)=>{
+                let x = e.clientX;
+                let y = e.clientY;
+                x = (x - div.getBoundingClientRect().x);
+                y = (y - div.getBoundingClientRect().y);
+                x = (x * can.width )/ div.getBoundingClientRect().width;
+                y = (y * can.height)/ div.getBoundingClientRect().height;
+                joysticks.forEach(js=>{
+                    if(e.pointerId == js.state.id){
+                        js.innerCenter.x = js.outerCenter.x;
+                        js.innerCenter.y = js.outerCenter.y;
+                        if(js._type == "html"){
+                            js.mainDiv.style.left = js.outerCenter.x - js.mainDiv.getBoundingClientRect().width/2 + "px";
+                            js.mainDiv.style.top = js.outerCenter.y - js.mainDiv.getBoundingClientRect().width/2 + "px";
+                            js.innerDiv.style.left = js.innerCenter.x - js.innerDiv.getBoundingClientRect().width/2 + "px";
+                            js.innerDiv.style.top = js.innerCenter.y - js.innerDiv.getBoundingClientRect().width/2 + "px";
+                        }
+                        js.state.on = false;
+                        js.state.id = null;
+                    }
+                });
+            });
+            
+            canvas.addEventListener("pointerleave", (e)=>{
+                joysticks.forEach(js=>{
+                    if(e.pointerId == js.state.id){
+                        js.innerCenter.x = js.outerCenter.x;
+                        js.innerCenter.y = js.outerCenter.y;
+                        js.state.on = false;
+                        js.state.id = null;
+                    }
+                });
+            });
+            
+            canvas.addEventListener("pointercanvascel", (e)=>{
+                joysticks.forEach(js=>{
+                    if(e.pointerId == js.state.id){
+                        js.innerCenter.x = js.outerCenter.x;
+                        js.innerCenter.y = js.outerCenter.y;
+                        js.state.on = false;
+                        js.state.id = null;
+                    }
+                });
+            });
+        }
+    
+    }
+
+
+    class TextImage{
+        constructor(src){
+            this.image = new Image();
+            this.image.src = src;
+        }
+
+        getImage(){
+            return this.image;
+        }
+
+    }
+
+    class Button{
+        constructor(x, y, w, h, text){
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+            this.text = text;
+            if(this.text == "Locked"){
+                this.enabled = false;
+            }else{
+                this.enabled = true;
+            }
+            this.state = new _JS_State();
+            this._stuffInit = false;
+            this._isImageAva = false;
+            this.image = null;
+            this.onclick = function(){}
+            this.onrelease = function(){}
+        }
+
+        setImageSrc(src){
+            this.image = new Image();
+            this.image.src = src;
+            this._isImageAva = true;
+        }
+
+        setImage(img){
+          this.image = img;
+          this._isImageAva = true;  
+        }
+
+        show(c, can, div, cam = undefined){
+            if(cam == undefined){
+                cam = { pos : { x : 0, y : 0 } }
+            }
+            if(!this._stuffInit){
+                c.canvas.addEventListener("pointerdown", (e)=>{
+                    if(this.state.on == false){
+                        let x = e.clientX;
+                        let y = e.clientY;
+                        x = (x - div.getBoundingClientRect().x);
+                        y = (y - div.getBoundingClientRect().y);
+                        x = (x * can.width )/ div.getBoundingClientRect().width;
+                        y = (y * can.height)/ div.getBoundingClientRect().height;
+                        x -= cam.pos.x;
+                        y -= cam.pos.y;
+                        if(x >= this.x && x <= this.x + this.w && y >= this.y && y <= this.y + this.h){
+                            this.state.id = e.pointerId;
+                            this.state.on = true;
+                            if(this.enabled){
+                                this.onclick();
+                            }
+                        }
+                    }
+                });
+                c.canvas.addEventListener("pointerup", (e)=>{
+                    if(this.state.id == e.pointerId){
+                        let x = e.clientX;
+                        let y = e.clientY;
+                        x = (x - div.getBoundingClientRect().x);
+                        y = (y - div.getBoundingClientRect().y);
+                        x = (x * can.width )/ div.getBoundingClientRect().width;
+                        y = (y * can.height)/ div.getBoundingClientRect().height;
+                        x -= cam.pos.x;
+                        y -= cam.pos.y;
+                        if(x >= this.x && x <= this.x + this.w && y >= this.y && y <= this.y + this.h){
+                            if(this.state.on && this.enabled){
+                                this.onrelease();
+                            }
+                        }
+                        this.state.on = false;
+                        this.state.id = null;
+                    }
+                });
+                this._stuffInit = true;
+            }
+            if(!this._isImageAva){
+                c.save();
+                roundRect(c, this.x, this.y, this.w, this.h, 20, "rgba(0, 0, 0, 0.5)", );
+                if(this.state.on) c.fillStyle = "rgba(50, 200, 250, 1)";
+                else c.fillStyle = "white";
+                c.font = `${(this.w + this.h)/7}px verdana`;
+                c.fillText(this.text, this.x/0.98, this.y + this.h/1.7);
+                c.restore();
+            }else{
+                c.drawImage(this.image, this.x, this.y, this.w, this.h);
+            }
+        }   
+    }
+
+    globalOut.Ui.Button = function(x, y, w, h, text){
+        return new Button(x, y, w, h, text);
+    }
+    globalOut.Ui.Joystick = Joystick;
+    globalOut.Ui.Controller = function(ent){
+        return new Controller(ent);
+    }
+    globalOut.Renderer.Texture = function(options){
+        return new Texture(options);
+    }
+    globalOut.Renderer.Custom = function(code){
+        return new Custom(code);
+    }
+    globalOut.Renderer.Paint = function(options){
+        return new Paint(options);
+    }
+    globalOut.Scene = function(options){
+        return new Scene(options);
+    }
+    globalOut.Entity = function(params){
+        return new Entity(params);
+    }
+    globalOut.Physics.Rectangle = function(center, width, height){
+        return new Rectangle(center, width, height);
+    }
+    globalOut.Physics.Polygon = function(center, n, size){
+        return new Polygon(center, n, size);
+    }
+    globalOut.Physics.Circle = function(center, radius){
+        return new Circle(center, radius);
+    }
+    globalOut.Physics.Composite = function(objects){
+        return new Composite(objects);
+    }
+    globalOut.Physics.Vector = function(x, y){
+        return new Vector(x, y);
+    }
+    globalOut.Game = function(width, height){
+        return new Game(width, height);
+    }
+    globalOut.Draw = function(layer){
+        return new DrawUtil(layer.Main.getContext("2d"));
+    }
+    globalOut.Util.Random = function(min, max){
+        return Math.random() * (max - min) + min;
+    }
+
+    globalOut.Util.TextImage = function(src){
+        return new TextImage(src);
+    }
+
+    globalOut.Util.LevelMaker = function(canvas, div, cam){
+        return new LevelMaker(canvas, div, cam);
+    }
+
+    globalOut.Util.LevelParser = function(levelData){
+        return new LevelParser(levelData);
+    }
+    globalOut.Util.RoundRect = roundRect;
+
+    globalOut.System.ParticleSystem = function(options){
+        return new ParticleSystem(options);
+    }
+    globalOut.Vector = function(x, y){
+        return new Vector(x, y);
+    }
+
+    var _Getter = {
+        Init : function(){
+            return globalOut;
+        },
+        Physics : function(){
+            return globalOut.Physics;
+        }, 
+        Renderer : function(){
+            return globalOut.Renderer;
+        },
+        Ui : function(){
+            return globalOut.Ui;
+        },
+        Util : function(){
+            return globalOut.Util;
+        }
+    }
+
+    return _Getter;
+}());
+
+const Levels = {
+    level1 : {
+        map : [251,345,457,27,580,345,199,29,166,219,94,145,268,193,105,92,380,196,39,95,446,196,42,93,571,171 + 20,106,37,537,217 + 25,35,61,636,276 + 20,83,33],
+        cover : [214,194,15,89,482,346,10,23,537,211,32,10,25,345,14,25,678,296,9,29,680,345,7,23],
+        portal : [570,139,82,63],
+        playersPosition : [227, 116, 50, 200, 260, 300],
+        boxes: [],
+        doors : [],
+        keys : [],
+        count : 0,
+        width : 700,
+        height : 750
+    },
+    level2 : {
+        map : [250,421,54,267,90,197,135,41,343,285,41,107,407,252,85,41,340,142,44,87,431,118,130,35,527,410,89,151,613,242,131,39],
+        cover : [680,243,13,36,365,118,16,32,365,253,12,37,24,197,11,38,251,553,47,11],
+        portal : [82,140,82,70],
+        playersPosition : [611, 469, 611, 469, 611, 469],
+        boxes : [444,499,92,115],
+        doors : [],
+        keys : [],
+        count : 1,
+        width : 700,
+        height : 750
+    },
+    level3 : {
+        map : [243,493,451,34,728,407,101,34,296,387,150,39,352,322,38,97,197,280,114,34,575,296,405,39,681,200,193,42,619,66,45,86,324,135,111,34, 683,227,195,13],
+        cover : [683,221,190,7,783,207,11,50,780,297,11,33,780,409,8,27,16,491,9,37,353,373,35,7,371,296,16,39,621,23,42,13,777,201,18,39,780,397,9,7,779,282,17,9,355,370,34,8],
+        portal : [717,133,90,90],
+        playersPosition : [72,552,131,556,180,556],
+        boxes : [256,445,71,62],
+        doors : [401,552,38,81,351,442,38,69,238,329,31,82,620,145,40,66],
+        keys : [315,570,74,45,735,349,71,42,324,76,73,43,743,252,69,43],
+        count : 2,
+        width : 800,
+        height : 800
+    },
+    level4 : {
+        map : [247,212,32,383,312,391,93,32,69,370,102,30,177,221,101,31,321,174,114,32,361,55,37,71,403,283,123,38,482,197,39,355,758,382,50,39,650,292,133,33,708,218,149,35],
+        cover : [463,283,10,38,265,390,13,24,231,222,15,30,264,174,13,30,17,370,17,31,785,382,11,48,785,217,10,49,483,19,48,7,368,19,62,5,248,21,42,3],
+        portal : [307,123,75,72],
+        playersPosition : [404,430,299,314, 299, 314],
+        boxes : [406,534,106,119],
+        doors : [360,126,33,73,360,228,29,78],
+        keys : [181,153,72,43,710,100,65,47],
+        count : 3,
+        width : 800,
+        height : 800
+    },
+    level5 : {
+        map : [204,576,365,33,661,574,39,37,128,467,213,36,381,361,459,35,695,361,168,36,86,229,129,42,238,105,43,168,403,257,145,33,587,139,45,236,619,573,48,38],
+        cover : [638,593,81,7,644,575,12,39,201,593,370,12,22,578,14,32,19,466,10,37,20,229,7,42,238,21,39,12,587,21,43,12,613,360,12,35],
+        portal : [709,296,107,93],
+        playersPosition : [85,513,159,527,221,513],
+        boxes : [],
+        doors : [172,414,43,73,456,311,42,70,588,302,41,87],
+        keys : [637,531,68,47,85,185,71,44],
+        spikes : [492,578,207,31,730,578,97,35],
+        count : 4,
+        width : 800,
+        height : 800
+    },
+    level6 : {
+        map : [212,659,165,36,103,511,167,48,305,361,289,38,435,188,37,306,252,146,109,221,505,609,142,39,610, 500,155,41,545,385,107,41,955,643,246,32,967,611,74,33,1057,474,42,35,791,205,35,368,899,376,176,30,986,275,188,29,946,113,271,187, 968,598,75,66],
+        cover : [434,341,32,12,23,510,14,48,973,632,86,10,1079,643,7,29,1079,472,6,29,810,376,11,24,1081,275,11,24,810,105,30,200,948,20,281,18,1079,108,16,196],
+        portal : [1042,704,73,87],
+        playersPosition : [477,703,549,711,603,707],
+        boxes : [],
+        doors : [225,300,52,86,279,301,50,86,152,588,56,101,156,713,55,69,855,702,45,88,901,704,47,88,946,704,41,91,986,703,37,88,910,325,37,70,951,327,39,72],
+        keys : [75,580,69,42,82,706,66,41,371,318,69,38,371,276,72,44,371,226,74,51,550,342,76,47,858,233,70,37,949,233,70,33,1035,234,73,36],
+        spikes : [],
+        count : 5,
+        width : 1100,
+        height : 1000
+    },
+    level7 : {
+        map : [77,539,113,36,334,435,260,35,367,487,45,68,295,310,48,103,145,281,255,42,233,180,173,37,340,155,44,82,418,131,112,37,849,409,61,38,676,278,213,43,586,182,89,37,],
+        cover : [21,538,10,33,272,280,11,38,368,452,42,12,18,281,17,43,318,179,13,32,362,131,10,30,879,408,8,33],
+        portal : [712,207,103,97],
+        playersPosition : [221,536,47,486,103,482],
+        boxes : [715,553,87,80, 415,381,72,69,],
+        doors : [],
+        keys : [],
+        spikes : [],
+        lasers: [366,559,8,72,61,584,37,20,199,229,10,58,592,582,31,24, 433,67,7,97,849,374,37,31],
+        count : 6,
+        width : 900,
+        height : 800
+    },
+    level8 : {
+        map : [192,284,341,37,349,356,35,104,352,423,160,31,341,137,42,101,452,104,174,35,121,240,196,55,670,570,49,45, 868,341,300,39,999,433,43,138,899,483,159,39,700,134,42,224,795,230,141,32,299,165,44,45,],
+        cover : [21,258,12,86,349,303,27,14,350,405,32,12,366,105,13,31,721,232,14,29,999,363,38,12,978,482,8,35,669,591,44,12, 119,268,197,17,319,164,16,39,],
+        portal : [959,562,84,67,],
+        playersPosition : [221,536,47,486,103,482],
+        boxes : [493,54,72,60,520,550,95,89,],
+        doors : [],
+        keys : [],
+        spikes : [],
+        lasers: [341,227,10,75,305,394,35,30,843,549,8,91,792,199,33,30],
+        count : 7,
+        width : 1100,
+        height : 800
+    },
+}
+
+let b1 = b2 = b3 = 0;
+function drawBigRect(c){
+    let bww = 50 * 1.3;
+    let bhh = 50 * 1.3;
+    b1 += 0.2;
+    //Draw big rect
+    bigT1 += 0.3;
+    bigT2 += 0.3;
+    if(bigT1 > 3.14) bigT1 = 3.14 - bigT1;
+    if(bigT2 > 3.14) bigT2 = 3.14 - bigT2;
+    //Legs - stroke
+    if(bigRect.velocity.Length() < 1){ bigT1 = 0; bigT2 = 0; }
+    else{
+        b1 = 0;
+        if(bigT2 - bigT1 == 0){
+            bigT2 += Math.PI/2;
+        }
+    };
+    c.strokeRect(0 - bww/4, 0 - Math.sin(bigT1) * 9, 13, 30, 30);
+    c.strokeRect(0 - bww/4 + 20, 0 - Math.sin(bigT2) * 9, 13, 30, 30);
+    //Body
+    pg.Util.RoundRect(game.Screen.Main.getContext("2d"), 0 - bww/2, 0 - bhh/2 - Math.sin(b1), bww, bhh/1.4, 20, "rgb(230, 20, 20)");
+    //Legs - fill
+    c.fillStyle = "rgb(230, 20, 20)";
+    c.fillRect(0 - bww/4, 0 - Math.sin(bigT1) * 11, 13, 30, 30);
+    c.fillRect(0 - bww/4 + 20, 0 - Math.sin(bigT2) * 11, 13, 30, 30);
+    //Eyes
+    c.save();
+    c.beginPath();
+    c.fillStyle = "black";
+    if(bigEnt.props.right){
+        c.ellipse(0, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0 + 20, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+    } 
+    if(bigEnt.props.left){
+        c.ellipse(0 - 20, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+    }
+    if(!bigEnt.props.left && !bigEnt.props.right){
+        c.ellipse(0 - 10, 0 - 12 - Math.sin(b1), 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0 - 10 + 20, 0 - 12 - Math.sin(b1), 7, 10, 0, 0, 2 * Math.PI);
+    }
+    c.closePath();
+    c.fill();
+    c.restore();
+}
+
+function drawSmallRect(c){
+    b2 += 0.2;
+    //Draw small rect
+    smallT1 += 0.3;
+    smallT2 += 0.3;
+    if(smallT1 > 3.14) smallT1 = 3.14 - smallT1;
+    if(smallT2 > 3.14) smallT2 = 3.14 - smallT2;
+    //Legs - stroke
+    if(smallRect.velocity.Length() < 1){ smallT1 = 0; smallT2 = 0; }
+    else{
+        b2 = 0;
+        if(smallT2 - smallT1 == 0){
+            smallT2 += Math.PI/2;
+        }
+    };
+    c.strokeRect(0 - smallRect.width/4, 0 + 3 - Math.sin(smallT1) * 20, 13, 20);
+    //Body
+    pg.Util.RoundRect(game.Screen.Main.getContext("2d"), 0 - smallRect.width/2, 0 - smallRect.height/2 - Math.sin(b2), smallRect.width, smallRect.height/1.4, 10, "rgb(20, 200, 20)");
+    //Legs - fill
+    c.fillStyle = "rgb(20, 200, 20)";
+    c.fillRect(0 - smallRect.width/4, 0 + 3 - Math.sin(smallT1) * 20, 13, 20);
+    //Eyes
+    c.save();
+    c.beginPath();
+    c.fillStyle = "black";
+    if(smallEnt.props.right){
+        c.ellipse(0, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0 + 20, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+    } 
+    if(smallEnt.props.left){
+        c.ellipse(0 - 20, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+    }
+    if(!smallEnt.props.left && !smallEnt.props.right){
+        c.ellipse(0 - 10, 0 - 12 - Math.sin(b2) * 1.3, 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0 - 10 + 20, 0 - 12 - Math.sin(b2) * 1.3, 7, 10, 0, 0, 2 * Math.PI);
+    }
+    c.closePath();
+    c.fill();
+    c.restore();
+}
+
+function drawTallRect(c){
+    b3 += 0.2;
+    tallT1 += 0.3;
+    tallT2 += 0.3;
+    if(tallT1 > 3.14) tallT1 = 3.14 - tallT1;
+    if(tallT2 > 3.14) tallT2 = 3.14 - tallT2;
+    //Legs - stroke
+    if(tallRect.velocity.Length() < 1){ tallT1 = 0; tallT2 = 0; }
+    else{
+        b3 = 0;
+        if(tallT2 - tallT1 == 0){
+            tallT2 += Math.PI/2;
+        }
+    };
+    c.strokeRect(0 - tallRect.width/4 + 2, 0 - Math.sin(tallT1) * 11, 7, 33, 30);
+    c.strokeRect(0 - tallRect.width/4 + 11, 0 - Math.sin(tallT2) * 11, 7, 33, 30);
+    //Body
+    pg.Util.RoundRect(game.Screen.Main.getContext("2d"), 0 - tallRect.width/2, 0 - tallRect.height/2 - Math.sin(b3), tallRect.width, tallRect.height/1.4, 15, "rgb(255, 255, 50)");
+    //Legs - fill
+    c.fillStyle = "rgb(255, 255, 50)";
+    c.fillRect(0 - tallRect.width/4 + 2, 0 - Math.sin(tallT1) * 11, 7, 33, 30);
+    c.fillRect(0 - tallRect.width/4 + 11, 0 - Math.sin(tallT2) * 11, 7, 33, 30);
+    //Eyes
+    c.save();
+    c.beginPath();
+    c.fillStyle = "black";
+    if(tallEnt.props.right){
+        c.ellipse(0, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0 + 20, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+    } 
+    if(tallEnt.props.left){
+        c.ellipse(0 - 20, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0, 0 - 12, 7, 10, 0, 0, 2 * Math.PI);
+    }
+    if(!tallEnt.props.left && !tallEnt.props.right){
+        c.ellipse(0 - 10, 0 - 12 - Math.sin(b3), 7, 10, 0, 0, 2 * Math.PI);
+        c.ellipse(0 - 10 + 20, 0 - 12 - Math.sin(b3), 7, 10, 0, 0, 2 * Math.PI);
+    }
+    c.closePath();
+    c.fill();
+    c.restore();
+}
+
+class Portal{
+    constructor(){
+        this.circleCount = 12;
+        this.circles = [];
+        this.initilised = false;
+        this.canvas = document.createElement("canvas");
+        this.c = this.canvas.getContext("2d");
+    }
+
+    init(cp){
+        if(!this.initilised){
+            this.canvas.width = cp.width;
+            this.canvas.height = cp.height;
+            this.cp = cp;
+            for(let i = 0; i < this.circleCount; i++){
+                this.circles[i] = {
+                    radius : i * (Math.sqrt((cp.width * cp.width) + (cp.height * cp.height)) / (this.circleCount)),
+                    reserve : i * (Math.sqrt((cp.width * cp.width) + (cp.height * cp.height)) / (this.circleCount )),
+                }
+            }
+            this.initilised = true;
+        }
+    }
+}
+let p = new Portal();
+function drawPortal(c, cp){
+    p.init(cp);
+    p.c.strokeStyle = "purple";
+    p.c.lineWidth = 5;
+    p.c.clearRect(0, 0, p.c.canvas.width, p.c.canvas.height);
+    p.c.fillStyle = "rgb(69, 61, 85)";
+    p.c.fillRect(0, 0, p.c.canvas.width, p.c.canvas.height);
+    p.circles.forEach(circ=>{
+        p.c.save();
+        p.c.beginPath();
+        p.c.arc(p.c.canvas.width/2, p.c.canvas.height/2, circ.radius, 0, 2 * Math.PI);
+        p.c.closePath();
+        p.c.stroke();
+        p.c.restore();
+        circ.radius -= 0.1;
+        if(circ.radius < 1){
+            circ.radius = circ.reserve;
+        }
+    });
+    c.drawImage(p.canvas, cp.center.x - cp.width/2, cp.center.y - cp.height/2, cp.width, cp.height);
+}
+
+function drawTriangle(c, x, y, size, angle){
+    c.save();
+    c.translate(x, y);
+    c.rotate(angle);
+    c.strokeStyle = "white";
+    c.fillStyle = "black";
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(0,-size/2);
+    c.lineTo(-size/2 - size/6,size/2);
+    c.lineTo(size/2 + size/6, size/2);
+    c.closePath();
+    c.fill();
+    c.stroke();
+    c.restore();
+}
+
+var pg = Phygo.Init();
+//Game - Initilisation
+var game = pg.Game({
+    width : 600,
+    height : 750,
+    Mainscene : {
+        camera_options:{
+            worldWidth : 700,
+            worldHeight : 750,
+            zoom : 1,
+            lockCamera : false,
+        },
+        boundry : true
+    }
+});
+
+var UiScene = pg.Scene({
+    camera_options:{
+        worldWidth : 600,
+        worldHeight : 500,
+        zoom : 1,
+        lockCamera : false,
+        c : game.Screen.Main.getContext("2d")
+    },
+    boundry : false
+});
+game.AddScene("ui", UiScene);
+game.CurrentScene = "ui";
+
+game.Start();
+game.Screen.Main.style.touchAction = "none";
+
+class ImagePreloader{
+    constructor(data){
+        this.data = {};
+        this.promises = [];
+        this.total = data.length;
+        this.load = 0;
+        for(let i = 0; i < data.length; i++){
+            let entries = Object.entries(Object.entries(data[i])[0][1])[0];
+            let isImage = false;
+            if(entries[1].split(".png").length > 1 || entries[1].split(".jpeg").length > 1){
+                isImage = true;
+            }
+            if(isImage){
+                let image = new Image();
+                image.src = entries[1];
+                let a = new Promise((res, rej)=>{
+                    image.onload = () =>{
+                        this.data[entries[0]] = image;
+                        this.load++;
+                        res(image);
+                    };
+                });
+            }else{
+                let audio = new Audio(entries[1]);
+                let a = new Promise((res, rej)=>{
+                    audio.addEventListener("canplaythrough", ()=>{
+                        this.data[entries[0]] = audio;
+                        this.load++;
+                        res(audio);
+                    });
+                });
+                this.promises.push(a);
+            }
+        }
+    }
+
+    getLoad(){
+        return this.load;
+    }
+
+    loaded(){
+        let allPromisesResloved = Promise.all(this.promises);
+        return allPromisesResloved;
+    }
+}
+function LoadedData(imagePreloader){
+    let p = new Promise((res, rej)=>{
+        imagePreloader.loaded().then(()=>{
+            res(imagePreloader.data);
+        });
+    });
+    return p;
+}
+
+var imageManager = new ImagePreloader([
+    [{ "box" : "https://github.com/PhyG0/BigSmallTall/raw/main/box.png" }],
+    [{ "key" : "https://github.com/PhyG0/BigSmallTall/raw/main/key.png" }],
+    [{ "door" : "https://github.com/PhyG0/BigSmallTall/raw/main/door.jpeg" }],
+    [{ "bg" : "https://github.com/PhyG0/BigSmallTall/raw/main/bg.mp3" }],
+    [{ "open" : "https://github.com/PhyG0/BigSmallTall/raw/main/doorOpen.wav" }],
+    [{ "pick" : "https://github.com/PhyG0/BigSmallTall/raw/main/pickKey.wav" }],
+    [{ "jump" : "https://github.com/PhyG0/BigSmallTall/raw/main/jump2.wav" }],
+    [{ "jump2" : "https://github.com/PhyG0/BigSmallTall/raw/main/jump.wav" }],
+    [{ "jump3" : "https://github.com/PhyG0/BigSmallTall/raw/main/jump3.wav" }],
+    [{ "trans" : "https://github.com/PhyG0/BigSmallTall/raw/main/trans.mp3" }],
+    [{ "portal" : "https://github.com/PhyG0/BigSmallTall/raw/main/portal.wav" }],
+    [{ "select" : "https://github.com/PhyG0/BigSmallTall/raw/main/select.wav" }],
+    [{ "btn" : "https://github.com/PhyG0/BigSmallTall/raw/main/btn.mp3" }],
+    [{ "death" : "https://github.com/PhyG0/BigSmallTall/raw/main/death.wav" }],
+    [{ "onit" : "https://github.com/PhyG0/BigSmallTall/raw/main/mooo.wav" }],
+]);
+
+
+//Global variables
+var ARROW_TIME = 100;
+var CURRENT_TIME = 0;
+var GRAVITY = 1300;
+var ASSETS_LOADED = false;
+var ASSETS = [];
+var BTNS = [];
+var PLAYER_SIZE_FACTOR = 1.3;
+var CLICKED = false;
+var gradControl = [pg.Util.Random(0, 255),  pg.Util.Random(0, 255), pg.Util.Random(0, 255)]
+var keys_buffer = document.createElement("canvas");
+var keys_buffer_ctx = keys_buffer.getContext("2d");
+var CURRENT_PORTAL, DOORS = [];
+var uiat = "menu";
+var levelsArray = Object.values(Levels);
+let LoadingPoint = pg.Physics.Vector(2 * game.Scenes["ui"].Camera.worldWidth, 0.5 * game.Scenes["ui"].Camera.worldHeight);
+//Big - player
+let bigRect = pg.Physics.Rectangle(pg.Physics.Vector(227, 116), 40 * PLAYER_SIZE_FACTOR, 40 * PLAYER_SIZE_FACTOR);
+var bigT1 = 0;
+var bigT2 = Math.PI/2;
+bigRect.acceleration.y = GRAVITY;
+bigRect.bounce = 0.01;
+bigRect.mass = 0.35;
+bigRect.inertia = Infinity;
+bigRect.friction = 0;
+let bigEnt = pg.Entity({
+    body : bigRect,
+    name : "big",
+    sprite : pg.Renderer.Custom(()=>{})
+});
+
+//Small - player
+let smallRect = pg.Physics.Rectangle(pg.Physics.Vector(50, 200), 25 * PLAYER_SIZE_FACTOR, 25 * PLAYER_SIZE_FACTOR);
+var smallT1 = 0;
+var smallT2 = Math.PI/2;
+smallRect.acceleration.y = GRAVITY;
+smallRect.bounce = 0.01;
+smallRect.inertia = Infinity;
+smallRect.mass = 0.35;
+smallRect.friction = 0;
+let smallEnt = pg.Entity({
+    body : smallRect,
+    name : "small",
+    sprite : pg.Renderer.Custom(()=>{})
+});
+
+//Tall - player
+let tallRect = pg.Physics.Rectangle(pg.Physics.Vector(260, 300), 30 * PLAYER_SIZE_FACTOR, 55 * PLAYER_SIZE_FACTOR);
+tallRect.mass = 0.31;
+tallRect.acceleration.y = GRAVITY;
+tallRect.bounce = 0.01;
+var tallT1 = 0;
+var tallT2 = Math.PI/2
+tallRect.inertia = Infinity;
+tallRect.friction = 0;
+let tallEnt = pg.Entity({
+    body : tallRect,
+    sprite : pg.Renderer.Custom((c)=>{}),
+    name : "tall",
+});
+
+var players = [bigEnt, smallEnt, tallEnt];
+players.forEach(player=>{
+    player.props.reachedPortal = false;
+    player.props.animationTime = 100;
+    player.props.angle = 0;
+    player.props.scale = 1;
+    player.props.dead = false;
+    player.props.played = false;
+    player.props.played2 = true;
+    player.props.keyCount = 0;
+});
+var selectedPlayer = 2;
+//Joystick - Init - movement
+let js = new pg.Ui.Joystick({
+    center : pg.Physics.Vector(game.Screen.Main.width/4, game.Screen.Main.height/1.15)
+});
+pg.Ui.Joystick.Activate(game.Screen.Main, [js], game.Screen.Main, game.Screen.div);
+//Jump button
+var jumpBtn = pg.Ui.Button(game.Screen.Main.width/2, game.Screen.Main.height/1.25, 100, 100, "Jump");
+var shiftBtn = pg.Ui.Button(game.Screen.Main.width/1.3, game.Screen.Main.height/1.25, 105, 100, "Switch");
+var backBtn = pg.Ui.Button(game.Screen.Main.width - 80, 0, 80, 50, "Menu");
+backBtn.onrelease = () =>{
+    ASSETS.trans.currentTime = 0;
+    ASSETS.trans.play();
+    game.SceneTrans(()=>{
+        game.CurrentScene = "ui";
+        uiat = "menu";
+    });
+    ASSETS.btn.play();
+}
+var restartBtn = pg.Ui.Button(game.Screen.Main.width - 190, 0, 100, 50, "Restart");
+restartBtn.onrelease = () =>{
+    ASSETS.btn.play();
+    LevelGenerator(game.Scenes["Main"], levelsArray[game.count], ASSETS);
+    return;
+}
+
+//Menu
+var menuButtons = [];
+let playBtn = pg.Ui.Button(game.Scenes["ui"].Camera.worldWidth/2 - 50, 2 * game.Scenes["ui"].Camera.worldHeight - 30, 130, 50, "Play");
+let Credits = pg.Ui.Button(game.Scenes["ui"].Camera.worldWidth/2 - 50, 2 * game.Scenes["ui"].Camera.worldHeight + 40, 130, 50, "Credits");
+playBtn.onrelease = () =>{
+    ASSETS.trans.currentTime = 0;
+    ASSETS.trans.play();
+    uiat = "level";
+    ASSETS.btn.play();
+}
+Credits.onrelease = () =>{
+    ASSETS.btn.play();
+    ASSETS.trans.currentTime = 0;
+    ASSETS.trans.play();
+    uiat = "credits";
+}
+menuButtons.push(playBtn);
+menuButtons.push(Credits);
+let backCred = pg.Ui.Button(game.Scenes["ui"].Camera.worldWidth/2 - 30, -2 * game.Scenes["ui"].Camera.worldHeight, 80, 60, "BACK");
+backCred.onrelease = () =>{
+    ASSETS.btn.play();
+    uiat = "menu";
+    ASSETS.trans.currentTime = 0;
+    ASSETS.trans.play();
+}
+menuButtons.push(backCred);
+
+
+jumpBtn.onclick = () =>{
+    if(players[selectedPlayer].sides.bottom.size != 0){
+        if(selectedPlayer == 0) ASSETS.jump.play();
+        if(selectedPlayer == 1) ASSETS.jump3.play();
+        if(selectedPlayer == 2) ASSETS.jump2.play();
+        players[selectedPlayer].body.velocity.y = -200 / players[selectedPlayer].body.mass;
+    }
+}
+function shiftPlayer(){
+    CURRENT_TIME = 0;
+    let allShifted = true;
+    for(let i = 0; i < players.length; i++){
+        if(!players[i].props.reachedPortal){
+            allShifted = false;
+        }
+    }
+    if(allShifted){
+        //Level finished
+        players.forEach(player=>{
+            player.props.reachedPortal = false;
+            player.props.played = false;
+            player.props.animationTime = 100;
+            player.props.angle = 0;
+            player.props.scale = 1;
+            player.props.keyCount = 0;
+            player.props.played2 = true;
+        });
+        game.count = (game.count + 1) % (levelsArray.length); 
+        uiLevels[game.count].text = "Level-" + (game.count + 1);
+        uiLevels[game.count].enabled = true;
+        LevelGenerator(game.Scenes["Main"], levelsArray[game.count], ASSETS);
+        return;
+    }
+    selectedPlayer = (selectedPlayer + 1) % (players.length);
+    if(players[selectedPlayer].props.reachedPortal){
+        shiftPlayer();
+    }
+}
+shiftBtn.onclick = () =>{
+    shiftPlayer();
+    ASSETS.select.play();
+    game.Scene.Camera.SetTarget(players[selectedPlayer]);
+    //RESET CURRENT TIME
+    CURRENT_TIME = 0;
+}
+//level maker
+let lvlM = pg.Util.LevelMaker(game.Screen.Main, game.Screen.div, game.Scene.Camera);
+//lvlM.startP();
+
+function LevelGenerator(scene, level, data){
+    game.SceneTrans(()=>{
+    keys_buffer_ctx.drawImage(ASSETS.key, 0, 0, 50, 30);
+    players.forEach(player=>{
+        player.props.reachedPortal = false;
+        player.props.animationTime = 100;
+        player.props.dead = false;
+        player.props.angle = 0;
+        player.props.scale = 1;
+        player.props.keyCount = 0;
+        player.props.played = false;
+        player.props.played2 = true;
+    });
+    game.count = level.count;
+    game.CurrentScene = "Main";
+    scene.entities = [];
+    scene.Camera.worldWidth = level.width;
+    scene.Camera.worldHeight = level.height;
+    scene.GenerateBoundry();
+    let bigD = pg.Physics.Vector(level.playersPosition[0], level.playersPosition[1]);
+    let smallD = pg.Physics.Vector(level.playersPosition[2], level.playersPosition[3]);
+    let tallD = pg.Physics.Vector(level.playersPosition[4], level.playersPosition[5]);
+    bigEnt.body.Translate(bigD.Sub(bigEnt.body.center));
+    smallEnt.body.Translate(smallD.Sub(smallEnt.body.center));
+    tallEnt.body.Translate(tallD.Sub(tallEnt.body.center));
+    scene.Camera.SetTarget(players[selectedPlayer]);
+    let lvlP = pg.Util.LevelParser(level.map);
+    let ents = lvlP.getEntities(level.cover);
+    let cover = lvlP.getCover(level.cover);
+    let portal = lvlP.getPortal(level.portal, "portal2");
+    CURRENT_PORTAL = portal;
+    let doors = lvlP.getDoors(level.doors, data.door);
+    let keys = lvlP.getKeys(level.keys, data.key);
+    let lasers = [];
+    if(level.lasers){
+        let d = lvlP.getLaser(level.lasers,scene, ASSETS.onit);
+        lasers = d[0];
+        BTNS = d[1];
+    }
+    scene.AddEntity(bigEnt);
+    scene.AddEntity(smallEnt);
+    scene.AddEntity(tallEnt);
+    let spikes = [];
+    if(level.spikes){
+        spikes = lvlP.getSpikes(level.spikes);
+    }
+    spikes.forEach(spike=>{
+        scene.AddEntity(spike);
+        spike.AddCollision("r-big", ()=>{
+            LevelGenerator(game.Scenes["Main"], level, ASSETS);
+            spike.CollidingGroups.clear();
+            ASSETS.death.play();
+        });
+        spike.AddCollision("r-small", ()=>{
+            LevelGenerator(game.Scenes["Main"], level, ASSETS);
+            spike.CollidingGroups.clear();
+            ASSETS.death.play();
+        });
+        spike.AddCollision("r-tall", ()=>{
+            LevelGenerator(game.Scenes["Main"], level, ASSETS);
+            spike.CollidingGroups.clear();
+            ASSETS.death.play();
+        });
+    });
+    keys.forEach(key=>{
+        key.props = {};
+        key.props.owned = false;
+        scene.AddEntity(key);
+        key.AddCollision("d-big", (e)=>{
+            if(!key.props.owned){
+                ASSETS.pick.currentTime = 0;
+                ASSETS.pick.play();
+                e.props.keyCount += 1;
+                key.sprite = pg.Renderer.Custom(()=>{});
+                key.props.owned = true;
+            }
+        });
+        key.AddCollision("d-small", (e)=>{
+            if(!key.props.owned){
+                ASSETS.pick.currentTime = 0;
+                ASSETS.pick.play();
+                e.props.keyCount += 1;
+                key.sprite = pg.Renderer.Custom(()=>{});
+                key.props.owned = true;
+            }
+        });
+        key.AddCollision("d-tall", (e)=>{
+            if(!key.props.owned){
+                ASSETS.pick.currentTime = 0;
+                ASSETS.pick.play();
+                e.props.keyCount += 1;
+                key.sprite = pg.Renderer.Custom(()=>{});
+                key.props.owned = true;
+            }
+        });
+    });
+    doors.forEach(door=>{
+        DOORS.push(door);
+        door.props = {};
+        door.props.unlocked = false;
+        door.AddCollision("r-small", (e)=>{
+            if(!door.props.unlocked){
+                if(e.props.keyCount > 0){
+                    ASSETS.open.currentTime = 0;
+                    ASSETS.open.play();
+                    door.props.unlocked = true;
+                    e.props.keyCount -= 1;
+                }
+            }
+        });
+        door.AddCollision("r-big", (e)=>{
+            if(!door.props.unlocked){
+                if(e.props.keyCount > 0){
+                    ASSETS.open.currentTime = 0;
+                    ASSETS.open.play();
+                    door.props.unlocked = true;
+                    e.props.keyCount -= 1;
+                }
+            }
+        });
+        door.AddCollision("r-tall", (e)=>{
+            if(!door.props.unlocked){
+                if(e.props.keyCount > 0){
+                    ASSETS.open.currentTime = 0;
+                    ASSETS.open.play();
+                    door.props.unlocked = true;
+                    e.props.keyCount -= 1;
+                }
+            }
+        });
+        scene.AddEntity(door);
+    });
+    scene.AddEntity(portal);
+    let boxes = lvlP.getBoxes(level.boxes, data.box);
+    players.forEach(player=>{
+        portal.AddCollision(`d-${player.uniqueName}`, ()=>{
+            if(!player.props.played){
+                ASSETS.portal.play();
+                player.props.played = true;
+            }
+            player.props.reachedPortal = true;
+        });
+    });
+    boxes.forEach(box=>{        
+        box.AddCollision("r-big");
+        box.AddCollision("r-small");
+        box.AddCollision("r-tall");
+        box.AddCollision("r-box");
+        ents.forEach(ent=>{
+            ent.AddCollision(`r-${box.uniqueName}`);
+        });
+        scene.AddEntity(box);
+    });
+    lasers.forEach(laser=>{
+        laser.AddCollision("d-big", ()=>{
+            if(laser.props.active){
+                LevelGenerator(game.Scenes["Main"], level, ASSETS);
+                laser.CollidingGroups.clear();
+            ASSETS.death.play();
+            bigEnt.props.dead = true;
+            }
+        });
+        laser.AddCollision("d-small", ()=>{
+            if(laser.props.active){
+                LevelGenerator(game.Scenes["Main"], level, ASSETS);
+                laser.CollidingGroups.clear();
+            ASSETS.death.play();
+            smallEnt.props.dead = true;
+            }
+        });
+        laser.AddCollision("d-tall", ()=>{
+            if(laser.props.active){
+                LevelGenerator(game.Scenes["Main"], level, ASSETS);
+                laser.CollidingGroups.clear();
+            ASSETS.death.play();
+            tallEnt.props.dead = true;
+
+            }
+        });
+        scene.AddEntity(laser);
+    });
+    ents.forEach(ent=>{
+        scene.AddEntity(ent);
+        ent.AddCollision("r-big");
+        ent.AddCollision("r-small");
+        ent.AddCollision("r-tall");
+    });
+    cover.forEach(cov=>{
+        scene.AddEntity(cov);
+    });
+    scene.active = true;
+
+});
+}
+
+let uiLevels = [];
+
+
+LoadedData(imageManager).then(data=>{
+    if(Object.keys(data).length == imageManager.total){
+        ASSETS_LOADED = true;
+    }
+    keys_buffer_ctx.fillStyle = "rgba(30, 40, 50, 0.6)";
+    keys_buffer_ctx.fillRect(0, 0, 100, 30);
+    window.addEventListener("keydown", (e)=>{
+        let key = e.key;
+        if(key == "w") jumpBtn.onclick();
+        if(key == "a") js.innerCenter.x = 120;
+        if(key == "d") js.innerCenter.x = 180;
+        if(key == " ") shiftBtn.onclick();
+
+    });
+
+    window.addEventListener("keyup", (e)=>{
+        let key = e.key;
+        if(key == "a" || key == "d"){
+            js.innerCenter.x = js.outerCenter.x;
+            js.innerCenter.y = js.outerCenter.y;
+        }
+    });
+    ASSETS = data;
+    ASSETS.jump2.volume = 0.5;
+    ASSETS.jump3.volume = 0.5;
+    let j = 0;
+    let ii = 0;
+    for(let i = 0; i < levelsArray.length; i++){
+        ii++;
+        if(i % 3 == 0){
+            j++;
+            ii = 0;
+        }
+        let btn;
+        if(i != 0){
+            btn = pg.Ui.Button(140 * ii + 50, UiScene.Camera.worldHeight/2 - 300 + j * 150, 120, 80, `Locked`);
+        }else{
+            btn = pg.Ui.Button(140 * ii + 50, UiScene.Camera.worldHeight/2 - 300 + j * 150, 120, 80, `Level-${i + 1}`);
+        }
+        btn.onrelease = () =>{
+            LevelGenerator(game.Scenes["Main"], levelsArray[i], data);
+            ASSETS.btn.play();
+        }
+
+        uiLevels.push(btn);
+    }
+    let men = pg.Ui.Button(uiLevels[0].x, uiLevels[0].y - 120, 1.5 * uiLevels[0].w, uiLevels[0].h, "Menu");
+    men.onrelease = () =>{
+        uiat = "menu";
+        ASSETS.trans.currentTime = 0;
+        ASSETS.trans.play();
+        ASSETS.btn.play();
+    }
+    uiLevels.push(men);
+    ASSETS.jump3.volume = 0.8;
+});
+
+game.DrawTopLayers = (c) =>{
+    //Draw controls
+    if(ASSETS_LOADED){
+        if(game.Scene.active){
+            js.show();
+            jumpBtn.show(c, game.Screen.Main, game.Screen.div);
+            shiftBtn.show(c, game.Screen.Main, game.Screen.div);
+            backBtn.show(c, game.Screen.Main, game.Screen.div);
+            restartBtn.show(c, game.Screen.Main, game.Screen.div);
+            c.drawImage(keys_buffer, 0, 0);
+            c.fillStyle = "white";
+            c.font = "20px Mochiy Pop P One";
+            c.fillText(`x ${players[selectedPlayer].props.keyCount}`, 55, 23);
+        }
+    }
+}
+
+game.DrawLayers = (c) =>{
+  lvlM.show(c);
+}
+
+function _oneDraw(c){
+    c.save();
+    c.translate(bigRect.center.x, bigRect.center.y);
+    c.scale(bigEnt.props.scale, bigEnt.props.scale);
+    c.rotate(bigEnt.props.angle);
+    drawBigRect(c);
+    c.restore();
+}
+
+function _twoDraw(c){
+    c.save();
+    c.translate(smallRect.center.x, smallRect.center.y);
+    c.scale(smallEnt.props.scale, smallEnt.props.scale);
+    c.rotate(smallEnt.props.angle);
+    drawSmallRect(c);
+    c.restore();
+}
+
+function _threeDraw(c){
+    c.save();
+    c.translate(tallRect.center.x, tallRect.center.y);
+    c.scale(tallEnt.props.scale, tallEnt.props.scale);
+    c.rotate(tallEnt.props.angle);
+    drawTallRect(c);
+    c.restore();
+}
+
+let done = false;
+game.Draw = (c) =>{
+    //Have to change background
+    if(game.Scene.active){
+        c.save();
+        c.fillStyle = "rgb(50, 100, 160)";
+        c.fillRect(0, 0, game.Scene.Camera.worldWidth, game.Scene.Camera.worldHeight/1.3);
+        c.strokeStyle = "white";
+        c.lineWidth = 3;
+        c.strokeRect(0, 0, game.Scene.Camera.worldWidth, game.Scene.Camera.worldHeight/1.3);
+        c.strokeRect(20, 20,game.Scene.Camera.worldWidth - 40, game.Scene.Camera.worldHeight/1.3 - 40);
+        c.restore();
+        c.font = "25px Mochiy Pop P One";
+        //If current scene/level is First level
+        if(game.CurrentScene == "Main" && game.count == 0){
+            c.save();      
+            c.fillStyle = "white";
+            c.fillText("Joystick to move player", 100, game.Scene.Camera.worldHeight/1.8);
+            c.fillText("Switch to change player", 100, game.Scene.Camera.worldHeight/1.6);
+            c.fillText("Reach Portal", 100, game.Scene.Camera.worldHeight/1.45);
+            c.restore();
+        }
+        //Draw portal
+        drawPortal(c, CURRENT_PORTAL.body);
+        //Draw players
+        if(selectedPlayer == 0){
+            _twoDraw(c);
+            _threeDraw(c);
+            _oneDraw(c);
+        }else if(selectedPlayer == 1){
+            _oneDraw(c);
+            _threeDraw(c);
+            _twoDraw(c);
+        }else{
+            _oneDraw(c);
+            _twoDraw(c);
+            _threeDraw(c);
+        }
+        //Show lil arrow on top of selected player
+        if(CURRENT_TIME < ARROW_TIME){
+            drawTriangle(c, players[selectedPlayer].body.center.x, players[selectedPlayer].body.center.y - players[selectedPlayer].body.height/2 - 8, 16, Math.PI);
+        }
+        uiLevels.forEach(btn=>{
+            btn.state.on = false;
+        });
+    }else{
+        if(ASSETS_LOADED){
+            if(CLICKED){
+            if(uiat == "menu"){
+                LoadingPoint = pg.Physics.Vector(game.Scenes["ui"].Camera.worldWidth/2, 2 * game.Scenes["ui"].Camera.worldHeight);
+            }else if(uiat == "level"){
+                LoadingPoint = pg.Physics.Vector(game.Scenes["ui"].Camera.worldWidth/2, 0.5 * game.Scenes["ui"].Camera.worldHeight);
+            }else if(uiat == "credits"){
+                LoadingPoint = pg.Physics.Vector(game.Scenes["ui"].Camera.worldWidth/2, -2 * game.Scenes["ui"].Camera.worldHeight); 
+            }
+            game.Scene.Camera.LookAt(LoadingPoint);
+            uiLevels.forEach(btn=>{
+                btn.show(c, game.Screen.Main, game.Screen.div, UiScene.Camera);
+            });
+            menuButtons.forEach(btn=>{
+                btn.show(c, game.Screen.Main, game.Screen.div, UiScene.Camera);
+            });
+            let grd = c.createLinearGradient(game.Scenes["ui"].Camera.worldWidth/2 - game.Screen.Main.width/2, -2 * game.Scenes["ui"].Camera.worldHeight - game.Screen.Main.height/2, game.Screen.Main.width, 4 * game.Screen.Main.height);
+            grd.addColorStop(0.2, `rgba(${gradControl[0]}, 10, 10, 0.3)`);
+            grd.addColorStop(0.4, `rgba(200, ${gradControl[1]}, 10, 0.3)`);
+            grd.addColorStop(0.6, `rgba(${gradControl[2]}, 10, 10, 0.3)`);
+            grd.addColorStop(0.8, `rgba(200, 10, ${gradControl[0]}, 0.3)`);
+            grd.addColorStop(1, `rgba(200, 10,  ${gradControl[0]}, 0.3)`);
+            c.fillStyle = grd;
+            c.fillRect(game.Scenes["ui"].Camera.worldWidth/2 - game.Screen.Main.width/2, -2 * game.Scenes["ui"].Camera.worldHeight - game.Screen.Main.height/2, game.Screen.Main.width, 4 * game.Screen.Main.height);
+            //Game title
+            c.fillStyle = "rgb(250, 100, 100)";
+            c.font = "50px Rubik Beastly";
+            c.fillText("BIG", game.Scenes["ui"].Camera.worldWidth/2 - 180, 2 * game.Scenes["ui"].Camera.worldHeight - 150);
+            c.fillStyle = "rgb(100, 100,250)";
+            c.font = "50px Spicy Rice";
+            c.fillText("SMALL", game.Scenes["ui"].Camera.worldWidth/2 - 80, 2 * game.Scenes["ui"].Camera.worldHeight - 150);
+            c.fillStyle = "rgb(250, 250, 10)";
+            c.font = "50px Trade Winds";
+            c.fillText("TALL", game.Scenes["ui"].Camera.worldWidth/2 + 60, 2 * game.Scenes["ui"].Camera.worldHeight - 150);
+            c.fillStyle = "rgb(120, 230, 200, 0.3)";
+            c.font = "25px Mochiy Pop P One";
+            c.fillText("Imagination Beyond Dimensions", game.Scenes["ui"].Camera.worldWidth/2 - 240, 2 * game.Scenes["ui"].Camera.worldHeight + 250);
+            c.save();
+            c.fillStyle = "white";
+            c.font = "25px Mochiy Pop P One";
+            c.fillText("CREDITS", game.Scenes["ui"].Camera.worldWidth/2 - 60, -2 * game.Scenes["ui"].Camera.worldHeight - 200);
+            //Caveat
+            c.font = "20px Mochiy Pop P One";
+            c.fillText("Crafted by : ", game.Scenes["ui"].Camera.worldWidth/2 - 230, -2 * game.Scenes["ui"].Camera.worldHeight - 150);
+            c.font = "32px Caveat";
+            c.fillText("Nandan A M ", game.Scenes["ui"].Camera.worldWidth/2 + 50, -2 * game.Scenes["ui"].Camera.worldHeight - 150);
+            c.font = "20px Mochiy Pop P One";
+            c.fillText("Original Game : ", game.Scenes["ui"].Camera.worldWidth/2 - 230, -2 * game.Scenes["ui"].Camera.worldHeight - 100);
+            c.font = "32px Caveat";
+            c.fillText("DimenSizer ", game.Scenes["ui"].Camera.worldWidth/2, -2 * game.Scenes["ui"].Camera.worldHeight - 100);
+            c.restore();
+        }else{
+            if(!done){
+                window.addEventListener("pointerup", ()=>{
+                    CLICKED = true;
+                    ASSETS.bg.play();
+                    ASSETS.bg.loop = true; 
+                });
+                done = true;
+            }
+            c.fillStyle = "rgb(100, 100, 130)";
+            c.font = "35px Mochiy Pop P One";
+            c.fillText(`Launch to Play`, 1.5 * game.Scenes["ui"].Camera.worldWidth + 100, game.Scenes["ui"].Camera.worldHeight/2);
+        }
+        }else{
+            //Loading screen
+            LoadingPoint = pg.Physics.Vector(2 * game.Scenes["ui"].Camera.worldWidth, 0.5 * game.Scenes["ui"].Camera.worldHeight);
+            game.Scene.Camera.LookAt(LoadingPoint);
+            c.save();
+            c.fillStyle = "rgb(100, 100, 130)";
+            c.font = "35px Mochiy Pop P One";
+            c.fillText(`Loading Assets...( ${imageManager.load}/${imageManager.total} )`, 1.5 * game.Scenes["ui"].Camera.worldWidth + 50, game.Scenes["ui"].Camera.worldHeight/2);
+            c.fillStyle = "green";
+            c.fillRect(1.5 * game.Scenes["ui"].Camera.worldWidth + 120, game.Scenes["ui"].Camera.worldHeight/1.9, imageManager.load * (400/(imageManager.total)), 30);
+            c.strokeStyle = "black";
+            c.lineWidth = 3;
+            c.strokeRect(1.5 * game.Scenes["ui"].Camera.worldWidth + 120, game.Scenes["ui"].Camera.worldHeight/1.9, 400, 30);
+            c.restore();
+            
+        }
+    }
+}
+
+game.Update = (dt) =>{
+    for(let i = 0; i < gradControl.length; i++){
+        gradControl[i] += dt * 20;
+        if(gradControl[i] > 255) gradControl[i] = pg.Util.Random(100, 200);
+    }
+    if(game.Scene.active){
+        if(players[selectedPlayer].props.reachedPortal && players[selectedPlayer].props.animationTime <= 0){
+            shiftPlayer();
+            game.Scene.Camera.SetTarget(players[selectedPlayer]);
+        }
+        //Update doors
+        DOORS.forEach(d=>{
+            if(d.props.unlocked){
+                if(d.body.height > 3){
+                    d.body.height -= 0.9;
+                    d.sprite.xHeight -= 1;
+                    d.sprite.center.y -= 0.05;
+                    d.height = d.body.height;
+                    d.sprite.height = d.body.height;
+                    d.body.Translate(pg.Physics.Vector(0, -0.4));
+                }else{
+                    d.CollidingGroups.clear();
+                }
+                //d.body.Translate(pg.Physics.Vector(0, -0.2))
+            }
+        });
+        //Control the selected player
+        //Type - 1
+        // if(js.getAngle() != 0){
+        //     players[selectedPlayer].body.velocity.x += Math.cos(js.getAngle()) * 200 * dt;
+        // }
+        //Type - 2
+        let ang = pg.Physics.Vector(js.getDirX(), js.getDirY());
+        let right = pg.Physics.Vector(1, 0);
+        let left = pg.Physics.Vector(-1, 0);
+        if(selectedPlayer == 0) speed = 70;
+        else if(selectedPlayer == 1) speed = 100;
+        else speed = 80;
+        if(ang.dot(right) > 0.6){
+            players[selectedPlayer].body.velocity.x = speed * (1 / (players[selectedPlayer].body.mass));
+            players[selectedPlayer].props.right = true;
+            players[selectedPlayer].props.left = false;
+        }else if(ang.dot(left) > 0.6){
+            players[selectedPlayer].body.velocity.x= -speed * (1 / (players[selectedPlayer].body.mass));
+            players[selectedPlayer].props.left = true;
+            players[selectedPlayer].props.right = false;
+        }else{
+            players[selectedPlayer].props.right = false;
+            players[selectedPlayer].props.left = false;
+            players[selectedPlayer].body.velocity.x *= 0.9;
+        }
+    
+        if(selectedPlayer != 0) bigEnt.body.velocity.x *= 0.9;
+        if(selectedPlayer != 1) smallEnt.body.velocity.x *= 0.9;
+        if(selectedPlayer != 2) tallEnt.body.velocity.x *= 0.9;
+        if(js.state.on == false){
+            bigEnt.body.velocity.x *= 0.9;
+            smallEnt.body.velocity.x *= 0.9;
+            tallEnt.body.velocity.x *= 0.9;
+        }
+
+        BTNS.forEach(btn=>{
+            let col = false;
+            if(btn.sides.top.size != 0){
+                col = true;
+            }
+            if(!col){
+                btn.props.laser.props.active = true;
+                if(btn.props.e){
+                    btn.props.e.props.played2 = true;
+                }
+            }
+        });
+    
+        if(CURRENT_TIME < ARROW_TIME) CURRENT_TIME += dt * 100;
+        players.forEach(player=>{
+            if(player.props.reachedPortal){
+                if(player.props.animationTime > 0){
+                    let v = CURRENT_PORTAL.body.center.Sub(player.body.center).Unit().Scale(100);
+                    player.body.velocity.x = v.x;
+                    player.body.velocity.y = v.y;
+                    player.props.animationTime--;
+                    if(player.props.scale > 0) player.props.scale -= 0.01;
+                    player.props.angle += 0.1;
+                }
+            }
+            if(player.props.dead){
+                player.body.velocity.x = 0;
+                player.body.velocity.y = 0;
+            }
+        });
+    }
+}
+
+
+    </script>
+</body>
+</html>
