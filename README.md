@@ -9,4 +9,5 @@
 
 <h2>Visual Feedback:</h2> <h3>The game utilizes vibrant graphics and animations to provide immediate feedback on player actions, enhancing the overall user experience.
 
-<h2>Rewards and Achievements: </h2>Completing levels rewards players with points, badges, or unlockable content, encouraging them to explore and experiment with different strategies.</h3>
+<h1>How to install?</h1>You can install this application to test on your android smartphone. To download the signed application go to your chrome browser and copy-paste the download link:.</h3>
+
