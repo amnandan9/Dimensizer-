@@ -11,3 +11,4 @@
 
 <h1>How to install?</h1>You can install this application to test on your android smartphone. To download the signed application go to your chrome browser and copy-paste the download link:.</h3>
 
+[Download](https://github.com/amnandan9/Dimensizer.1.apk) 
