@@ -14,9 +14,9 @@
 [Download](https://github.com/amnandan9/Dimensizer-/releases/download/Dimensizer/Dimensizer.1.apk) 
 # Preview:
 <img src="https://github.com/user-attachments/assets/922a9149-99ce-48d2-a417-e16dc4fea826" alt="Splash Screen" width="180" height="200" /> 
-<img src="https://github.com/user-attachments/assets/73eda4ac-239c-433d-bfaa-85872b0c92aa" alt="Splash Screen" width="200" height="200" /> 
-<img src="https://github.com/user-attachments/assets/72029e3f-a9d3-4bff-aa84-b80eaf6d71ed" alt="Splash Screen" width="200" height="200" /> 
-<img src="https://github.com/user-attachments/assets/57fdbc11-5c24-4e53-9e56-403470f80cf8" alt="Splash Screen" width="200" height="200" /> 
+<img src="https://github.com/user-attachments/assets/73eda4ac-239c-433d-bfaa-85872b0c92aa" alt="Splash Screen" width="180" height="200" /> 
+<img src="https://github.com/user-attachments/assets/72029e3f-a9d3-4bff-aa84-b80eaf6d71ed" alt="Splash Screen" width="180" height="200" /> 
+<img src="https://github.com/user-attachments/assets/57fdbc11-5c24-4e53-9e56-403470f80cf8" alt="Splash Screen" width="180" height="200" /> 
 <img src="https://github.com/user-attachments/assets/7523f824-1186-452c-b9f8-c32042a25e38" alt="Splash Screen" width="180" height="200" /> 
 
 
