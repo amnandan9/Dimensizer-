@@ -12,3 +12,18 @@
 <h1>How to install?</h1>You can install this application to test on your android smartphone. To download the signed application go to your chrome browser and copy-paste the download link:.</h3>
 
 [Download](https://github.com/amnandan9/Dimensizer-/releases/download/Dimensizer/Dimensizer.1.apk) 
+# Preview:
+<img src="https://github.com/user-attachments/assets/922a9149-99ce-48d2-a417-e16dc4fea826" alt="Splash Screen" width="180" height="200" /> 
+<img src="https://github.com/user-attachments/assets/73eda4ac-239c-433d-bfaa-85872b0c92aa" alt="Splash Screen" width="200" height="200" /> 
+<img src="https://github.com/user-attachments/assets/72029e3f-a9d3-4bff-aa84-b80eaf6d71ed" alt="Splash Screen" width="200" height="200" /> 
+<img src="https://github.com/user-attachments/assets/57fdbc11-5c24-4e53-9e56-403470f80cf8" alt="Splash Screen" width="200" height="200" /> 
+<img src="https://github.com/user-attachments/assets/7523f824-1186-452c-b9f8-c32042a25e38" alt="Splash Screen" width="180" height="200" /> 
+
+
+
+![](https://img.shields.io/github/stars/imshakil/BloodBank.svg)
+![](https://img.shields.io/github/forks/imshakil/BloodBank.svg)
+[![Views](https://hits.dwyl.com/imshakil/BloodBank.svg?style=flat-square&show=unique)](http://hits.dwyl.com/imshakil/BloodBank)
+![](https://img.shields.io/github/tag/imshakil/BloodBank.svg) 
+![](https://img.shields.io/github/v/release/imshakil/BloodBank.svg) 
+![](https://img.shields.io/github/issues/imshakil/BloodBank.svg)
